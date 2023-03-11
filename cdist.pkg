@@ -3,6 +3,6 @@ d cdist: Stata module for counterfactual distribution estimation
 d 
 d Author: Ben Jann, University of Bern, ben.jann@unibe.ch
 d
-d Distribution-Date: 20230309
+d Distribution-Date: 20230311
 f cdist.sthlp
 f cdist.ado

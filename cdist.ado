@@ -1,4 +1,4 @@
-*! version 0.0.1  09mar2023  Ben Jann
+*! version 0.0.2  11mar2023  Ben Jann
 
 capt mata: assert(mm_version()>=201)
 if _rc {
@@ -19,7 +19,7 @@ program cdist, eclass
         exit
     }
     local version : di "version " string(_caller()) ":"
-    `version' _vce_parserun cdist: `0'
+    `version' _vce_parserun cdist, wtypes(pw iw) bootopts(force) jkopts(force): `0'
     if "`s(exit)'" == "" {
         if `"`subcmd'"'!=substr("estimate",1,max(3,strlen(`"`subcmd'"'))) {
             local 00 `0'
@@ -58,8 +58,10 @@ program Display, rclass
             local c1 = `c1' - `offset1' - `offset2'
             local c2 = `c2' - `offset2'
         }
-        di as txt _col(`c1') "Adjustment type" _col(`c2') "=" _col(`c3')/*
-            */ as res %`w2's e(atype)
+        if `"`e(pooled)'"'!="" local pooled "yes"
+        else                   local pooled "no"
+        di as txt _col(`c1') "Pooled" _col(`c2') "=" _col(`c3')/*
+            */ as res %`w2's "`pooled'"
         di as txt "Group 0: `e(by)' = " as res e(by0) /*
             */ as txt _col(`c1') "N of obs 0" _col(`c2') "=" _col(`c3')/*
             */ as res %`w2'.0gc e(N0)
@@ -104,9 +106,11 @@ program Estimate, eclass
     // syntax
     syntax varlist(fv) [if] [in] [pw iw fw], by(varname) [ swap POOled /*
         */ NQuantiles(numlist max=1 int >0) Percentiles(numlist >=0 <=100) /*
-        */ Statistics(str) lincom(str) keep(str) drop(str) /*
-        */ Method(str) Gsize(int 100) /*
+        */ Statistics(str) qdef(numlist max=1 int >=0 <=11) /*
+        */ lincom(str) keep(str) drop(str) /*
+        */ Method(str) Gsize(int 100) jmp /*
         */ noHEADer noTABle * ]
+    if "`qdef'"=="" local qdef 2
     _get_diopts diopts, `options'
     c_local diopts `header' `table' `diopts'
     if `"`statistics'"'!="" {
@@ -128,9 +132,21 @@ program Estimate, eclass
     }
     else if "`nquantiles'"=="" local nquantiles 9
     _parse_method, `method'
+    if "`jmp'"!="" {
+        if !inlist("`method'","qr","qr0") {
+            di as error "jmp requires method(qr)"
+            exit 198
+        }
+        if "`pooled'"!="" {
+            di as error "jmp and pooled not both allowed"
+            exit 198
+        }
+    }
     
     // lincom()/keep()/drop()
-    local eqs "obs0 fit0 adj0 obs1 fit1 adj1"
+    local eqs "obs0 fit0 adj0"
+    if "`jmp'"!="" local eqs "`eqs' loc0"
+    local eqs = "`eqs' " + subinstr("`eqs'","0","1",.)
     if `"`keep'"'!="" {
         if `"`drop'"'!="" {
             di as err "keep() and drop() not both allowed"
@@ -203,6 +219,8 @@ program Estimate, eclass
     gettoken depvar xvars : varlist
     _fv_check_depvar `depvar'
     local xvars `xvars'
+    fvrevar `xvars' if `touse' // create tempvars for factor variable terms
+    local XVARS `r(varlist)'
     mata: cdist()
     
     // results
@@ -212,8 +230,9 @@ program Estimate, eclass
     eret local method        "`method'"
     eret local indepvars     "`xvars'"
     eret local by            "`by'"
-    if "`pooled'"!="" eret local atype "pooled"
-    else              eret local atype "group"
+    eret local pooled        "`pooled'"
+    eret local jmp           "`jmp'"
+    eret local qdef          "`qdef'"
     eret local statistics    "`statistics'"
     eret local percentiles   "`percentiles'"
     eret local eqnames       "`eqs'"
@@ -514,7 +533,8 @@ struct CDIST {
                            wvar     // varname of weights
     real scalar            g,       // target size of approximation grid
                            k,       // number of statistics
-                           pooled   // used pooled X distribution 
+                           pooled,  // used pooled X distribution
+                           qdef     // quantile definition
     transmorphic colvector s        // statistics
     string rowvector       eqs      // equations to be included in results
     real colvector         w        // pooled weights
@@ -530,9 +550,11 @@ struct CDIST_G {
                            w        // weights
     real matrix            X        // covariates
     real matrix            b        // regression coefficients
+    real colvector         b50      // coefficients of median regression
     real colvector         obs,     // results: observed
                            fit,     // results: fitted
-                           adj      // results: adjusted
+                           adj,     // results: X adjusted
+                           loc      // results: X adjusted and location shifted
 }
 
 void cdist()
@@ -547,6 +569,7 @@ void cdist()
     // setup S
     S.method = st_local("method")
     S.pooled = st_local("pooled")!=""
+    S.qdef   = strtoreal(st_local("qdef"))
     S.g      = strtoreal(st_local("gsize"))
     if (st_local("statistics")!="") {
         S.s = s = tokens(st_local("statistics"))'
@@ -565,7 +588,7 @@ void cdist()
     }
     S.eqs = tokens(st_local("eqs"))
     S.touse = st_local("touse")
-    S.xvars = st_local("xvars")
+    S.xvars = st_local("XVARS")
     S.wvar  = st_local("wvar")
     // setup G0 and G1
     G0.touse = st_local("touse0")
@@ -591,13 +614,18 @@ void cdist()
         G0.w = G1.w = 1
         if (S.pooled) S.w = 1
     }
+    // loc0/loc1: need to obtain median fits
+    if (anyof(S.eqs,"loc0") | anyof(S.eqs,"loc1")) {
+        G0.b50 = mm_qrfit(G0.y, G0.X, G0.w, 0.5)
+        G1.b50 = mm_qrfit(G1.y, G1.X, G1.w, 0.5)
+    }
     // compute results
     if      (S.method=="logit") f = &_cdist_dr()  // distribution regression
     else                        f = &_cdist_qr()  // quantile regression
-    if (anyof(S.eqs,"obs0")) G0.obs = _cdist_stats(G0.y, G0.w, S.s)
-    (*f)(S, G0, G1, anyof(S.eqs,"fit0"), anyof(S.eqs,"adj0"))
-    if (anyof(S.eqs,"obs1")) G1.obs = _cdist_stats(G1.y, G1.w, S.s)
-    (*f)(S, G1, G0, anyof(S.eqs,"fit1"), anyof(S.eqs,"adj1"))
+    if (anyof(S.eqs,"obs0")) G0.obs = _cdist_stats(G0.y, G0.w, S.s, S.qdef)
+    (*f)(S, G0, G1, (anyof(S.eqs,"fit0"), anyof(S.eqs,"adj0"), anyof(S.eqs,"loc0")))
+    if (anyof(S.eqs,"obs1")) G1.obs = _cdist_stats(G1.y, G1.w, S.s, S.qdef)
+    (*f)(S, G1, G0, (anyof(S.eqs,"fit1"), anyof(S.eqs,"adj1"), anyof(S.eqs,"loc1")))
     // return results
     j = length(S.eqs)
     b = J(j*S.k, 1, .)
@@ -608,9 +636,11 @@ void cdist()
         if      (S.eqs[j]=="obs0") b[|i0 \ i1|] = G0.obs
         else if (S.eqs[j]=="fit0") b[|i0 \ i1|] = G0.fit
         else if (S.eqs[j]=="adj0") b[|i0 \ i1|] = G0.adj
+        else if (S.eqs[j]=="loc0") b[|i0 \ i1|] = G0.loc
         else if (S.eqs[j]=="obs1") b[|i0 \ i1|] = G1.obs
         else if (S.eqs[j]=="fit1") b[|i0 \ i1|] = G1.fit
         else if (S.eqs[j]=="adj1") b[|i0 \ i1|] = G1.adj
+        else if (S.eqs[j]=="loc1") b[|i0 \ i1|] = G1.loc
     }
     st_matrix(st_local("b"), b')
     st_matrixcolstripe(st_local("b"), (mm_expand(S.eqs', S.k, 1, 1),
@@ -622,10 +652,10 @@ void cdist()
 
 // subroutine to compute results based on quantile regression
 void _cdist_qr(struct CDIST scalar S, struct CDIST_G scalar G,
-    struct CDIST_G scalar G1, real scalar fit, real scalar adj)
+    struct CDIST_G scalar G1, real rowvector todo)
 {
     // anything to do?
-    if (!fit & !adj) return
+    if (!any(todo)) return
     // determine evaluation points (regular grid)
     G.g = S.g
     G.p = (1::G.g)/G.g :- .5/G.g
@@ -633,27 +663,24 @@ void _cdist_qr(struct CDIST scalar S, struct CDIST_G scalar G,
     G.b = J(cols(G.X) + 1, G.g, .)
     if (S.method=="qr0") _cdist_qr_b0(G)
     else                 _cdist_qr_b(G)
-    // obtain non-counterfactual results
-    if (fit) {
+    // obtain fit
+    if (todo[1]) {
         G.fit = _cdist_stats(
                 vec(_cdist_xb(G.X, G.b)),         // stacked predictions
                 S.wvar=="" ? 1 : J(G.g, 1, G.w),  // stacked weights
-                S.s)
+                S.s, S.qdef)
     }
-    // obtain counterfactual results
-    if (adj) {
-        if (S.pooled) {
-            G.adj = _cdist_stats(
-                vec(_cdist_xb(S.X, G.b)),        // stacked predictions
-                S.wvar=="" ? 1 : J(G.g, 1, S.w), // stacked weights
-                S.s)
-        }
-        else {
-            G.adj = _cdist_stats(
-                vec(_cdist_xb(G1.X, G.b)),        // stacked predictions
-                S.wvar=="" ? 1 : J(G.g, 1, G1.w), // stacked weights
-                S.s)
-        }
+    // obtain adj
+    if (todo[2]) {
+        if (S.pooled) G.adj = _cdist_stats(vec(_cdist_xb(S.X, G.b)),
+            S.wvar=="" ? 1 : J(G.g, 1, S.w), S.s, S.qdef)
+        else G.adj = _cdist_stats(vec(_cdist_xb(G1.X, G.b)),
+            S.wvar=="" ? 1 : J(G.g, 1, G1.w), S.s, S.qdef)
+    }
+    // obtain loc
+    if (todo[3]) {
+        G.loc = _cdist_stats(vec(_cdist_xb(G1.X, (G.b:-(G.b50-G1.b50)))),
+            S.wvar=="" ? 1 : J(G.g, 1, G1.w), S.s, S.qdef)
     }
 }
 
@@ -661,7 +688,7 @@ void _cdist_qr(struct CDIST scalar S, struct CDIST_G scalar G,
 void _cdist_qr_b0(struct CDIST_G scalar G)
 {
     real scalar i
-
+    
     for (i=1; i<=G.g; i++) G.b[,i] = mm_qrfit(G.y, G.X, G.w, G.p[i])
 }
 
@@ -672,9 +699,9 @@ void _cdist_qr_b(struct CDIST_G scalar G)
     real colvector     b_mid, b_i
     class mm_qr scalar Q
 
-    // get 1st estimate in middle
+    // get 1st estimate in middle 
     Q.data(G.y, G.X, G.w)
-    i = ceil(G.g/2) 
+    i = ceil(G.g/2)
     Q.p(G.p[i])
     G.b[,i] = b_mid = b_i = Q.b()
     i++
@@ -696,13 +723,13 @@ void _cdist_qr_b(struct CDIST_G scalar G)
 
 // subroutine to compute results based on distribution regression
 void _cdist_dr(struct CDIST scalar S, struct CDIST_G scalar G,
-    struct CDIST_G scalar G1, real scalar fit, real scalar adj)
+    struct CDIST_G scalar G1, real rowvector todo)
 {
     real scalar    ymax // maximum of depvar (within group)
     real colvector F    // distribution function
     
     // anything to do?
-    if (!fit & !adj) return
+    if (!any(todo)) return
     // determine evaluation points
     if (mm_nunique(G.y)<=S.g) G.l = mm_unique(G.y) // use observed values
     else {
@@ -718,18 +745,18 @@ void _cdist_dr(struct CDIST scalar S, struct CDIST_G scalar G,
     G.b = J(cols(G.X) + 1, G.g, .)
     _cdist_dr_logit(S, G)
     assert(!hasmissing(G.b))
-    // obtain non-counterfactual results
-    if (fit) {
+    // obtain fit
+    if (todo[1]) {
         F = mean(invlogit(_cdist_xb(G.X, G.b)), G.w)' \ 1
         _sort(F, 1) // rearrange if there are crossings
-        G.fit = _cdist_stats(G.l \ ymax, mm_diff(0\F), S.s, 0/*high quantile*/)
+        G.fit = _cdist_stats(G.l \ ymax, mm_diff(0\F), S.s, S.qdef)
     }
-    // obtain counterfactual results
-    if (adj) {
+    // obtain adj
+    if (todo[2]) {
         if (S.pooled) F = mean(invlogit(_cdist_xb(S.X, G.b)), S.w)' \ 1
         else          F = mean(invlogit(_cdist_xb(G1.X, G.b)), G1.w)' \ 1
         _sort(F, 1) // rearrange if there are crossings
-        G.adj = _cdist_stats(G.l \ ymax, mm_diff(0\F), S.s, 0/*high quantile*/)
+        G.adj = _cdist_stats(G.l \ ymax, mm_diff(0\F), S.s, S.qdef)
     }
 }
 
@@ -773,14 +800,13 @@ real matrix _cdist_xb(real matrix X, real matrix B)
 
 // subroutine to compute statistics from distribution
 real colvector _cdist_stats(real colvector y, real colvector w,
-    transmorphic colvector s, | real scalar qdef)
+    transmorphic colvector s, real scalar d)
 {
     string rowvector S
-    real scalar      d, i
+    real scalar      i
     real colvector   b
     real matrix      tmp
     
-    d = qdef<. ? qdef : 2
     if (isreal(s)) return(mm_quantile(y, w, s, d))
     i = rows(s)
     b = J(i,1,.)

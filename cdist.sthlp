@@ -1,5 +1,5 @@
 {smcl}
-{* 09mar2023}{...}
+{* 11mar2023}{...}
 {hi:help cdist}{...}
 {right:{browse "http://github.com/benjann/cdist/"}}
 {hline}
@@ -50,11 +50,18 @@
     {p_end}
 {p2col:{cmd:adj0}}composition-adjusted distribution of group 0
     {p_end}
+{p2col:{cmd:loc0}}composition-adjusted and location-shifted distribution of group 0; only if
+    {cmd:jmp} has been specified
+    {p_end}
 {p2col:{cmd:obs1}}observed distribution of group 1
     {p_end}
 {p2col:{cmd:fit1}}fitted distribution of group 1
     {p_end}
 {p2col:{cmd:adj1}}composition-adjusted distribution of group 1
+    {p_end}
+{p2col:{cmd:loc0}}composition-adjusted and location-shifted distribution of group 1; only if
+    {cmd:jmp} has been specified
+    {p_end}
 
 {pmore}
     For example, type
@@ -83,6 +90,9 @@
     {p_end}
 {synopt :{opt pool:ed}}adjust to pooled X distribution; the default is to adjust to X distribution of other group
     {p_end}
+{synopt :{opt jmp}}also obtain location-shifted counterfactuals; only allowed with {cmd:method(qr)}; not allowed with
+    {cmd:pooled}
+    {p_end}
 
 {syntab :Target statistics}
 {synopt :{opt nq:uantiles(#)}}number of quantiles to be reported; default is {cmd:nquantiles(9)}
@@ -92,6 +102,8 @@
 {synopt :{opt s:tatistics(stats)}}calculate listed statistics; available statistics are
     {cmdab:m:ean}, {cmdab:v:ariance}, {cmd:sd}, {cmdab:med:ian}, {cmd:iqr}[{cmd:(# #)}], {cmdab:g:ini}, {cmd:mld}, {cmd:theil}, {cmd:cv},
     {cmd:vlog}, {cmd:sdlog}, {cmd:q(#)}, {cmd:p(#)}, {opt qr:atio(# #)}
+    {p_end}
+{synopt :{opth qdef(#)}}quantile definition to be used when taking quantiles; # in {0,..,11}, default is 2
     {p_end}
 
 {syntab :Equations}
@@ -170,10 +182,18 @@
 {title:Examples}
 
 {pstd}
-    ?
+    Twofold decomposition using distribution regression:
 
-        {com}. ?
-        {txt}
+        . {stata sysuse nlsw88, clear}
+        . {stata generate lnwage = ln(wage)}
+        . {stata cdist lnwage tenure ttl_exp grade, by(union) statistics(mean variance iqr(10 90))}
+        . {stata "cdist lincom (Diff:fit0-fit1) (Char:fit0-adj0) (Coef:adj0-fit1)"}
+
+{pstd}
+    JMP type decomposition using quantile regressions:
+
+        . {stata cdist lnwage tenure ttl_exp grade, by(union) method(qr) jmp statistics(mean variance iqr(10 90))}
+        . {stata "cdist lincom (Diff:fit0-fit1) (Char:fit0-adj0) (Coef:adj0-loc0) (Resid:loc0-fit1)"}
 
 
 {title:Returned results}
