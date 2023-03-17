@@ -3,7 +3,7 @@ Stata module for counterfactual distribution estimation
 
 `cdist` estimates counterfactual distributions using methods suggested
 by Chernozhukov et al. (2013). The unconditional (counterfactual) distributions
-are either obtained my distribution regression using logit models
+are either obtained by distribution regression using logit models
 or by a linear quantile regression process.
 
 To install `cdist` from GitHub, type
@@ -18,6 +18,14 @@ Stata 14 (or newer) and [`moremata`](https://github.com/benjann/moremata)
 ---
 
 Main changes:
+
+    18mar2023 (version 1.0.1)
+    - help file completed
+    - can now specify the padding percentage in intergate()
+    - option quantile() added
+    - the coefficients of the individual regressions are now stored in e(B0) and
+      e(B1), evaluation points in e(AT0) and e(AT1)
+    - cdist did not work in Stata 14; this is fixed
 
     15mar2023 (version 1.0.0)
     - by default, the mean is now reported (rather than 9 percentiles)

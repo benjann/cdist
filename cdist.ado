@@ -1,4 +1,4 @@
-*! version 1.0.0  15mar2023  Ben Jann
+*! version 1.0.1  18mar2023  Ben Jann
 
 capt mata: assert(mm_version()>=201)
 if _rc {
@@ -77,14 +77,7 @@ program Display, rclass
             */ as res %`w2'.0gc e(N1)
         di as txt _col(`c1') "Estimation method" _col(`c2') "=" _col(`c3')/*
             */ as res %`w2's e(method)
-        if      `"`e(percentile)'"'!="" local stat "percentile"
-        else if `"`e(pdf)'"'!=""        local stat "pdf"
-        else if `"`e(cdf)'"'!=""        local stat "cdf"
-        else                            local stat
         if e(gsize0)==e(gsize1) {
-            if "`stat'"!="" {
-                di as txt "Coefficients = " as res "`stat'" _c
-            }
             local gsize = e(gsize0)
             if `gsize'<. local gsize %`w2'.0g `gsize'
             else         local gsize %`w2's "(none)"
@@ -93,15 +86,16 @@ program Display, rclass
         }
         else {
             forv i=0/1 {
-                if `i' & "`stat'"!="" {
-                    di as txt "Coefficients = " as res "`stat'" _c
-                }
                 local gsize = e(gsize`i')
                 if `gsize'<. local gsize %`w2'.0g `gsize'
                 else         local gsize %`w2's "(none)"
                 di as txt _col(`c1') "Grid size `i'" _col(`c2') "=" /*
                     */ _col(`c3') as res `gsize'
             }
+        }
+        if `"`e(coeftype)'"'!="" {
+            di as txt _col(`c1') "Coefficient type" _col(`c2') "=" /*
+            */ _col(`c3') as res  %`w2's e(coeftype)
         }
         di ""
     }
@@ -146,12 +140,14 @@ end
 
 program Estimate, eclass
     // syntax
-    syntax varlist(fv) [if] [in] [pw iw fw], by(varname) [ swap POOled /*
+    syntax varlist(fv) [if] [in] [pw iw fw], by(varname) [ swap /*
+        */ POOled jmp JMP2(str) /*
         */ Statistics(str) pdf PDF2(str) cdf CDF2(str) /*
-        */ Percentile Percentile2(str) qdef(numlist max=1 int >=0 <=11) /*
+        */ Percentile Percentile2(str) Quantile Quantile2(str) /*
+        */ qdef(numlist max=1 int >=0 <=11) /*
         */ lincom(str) DECOmp DECOmp2(str) keep(str) drop(str) /*
         */ Method(str) Gsize(int 100) /*
-        */ noINTegrate INTegrate2(int 1000) jmp JMP2(str) /*
+        */ noINTegrate INTegrate2(numlist max=2 >=0) /*
         */ noDOTs noHEADer noLEGend noTABle /*
         */ GENerate GENerate2(str) replace * ]
     if "`qdef'"=="" local qdef 2
@@ -160,9 +156,10 @@ program Estimate, eclass
     
     // target statistics
     if `"`percentile2'"'!="" local percentile percentile
+    if `"`quantile2'"'!=""   local quantile quantile
     if `"`pdf2'"'!=""        local pdf pdf
     if `"`cdf2'"'!=""        local cdf cdf
-    local sopts statistics percentile pdf cdf
+    local sopts statistics percentile quantile pdf cdf
     local tmp 0
     foreach opt of local sopts {
         local tmp = `tmp' + (`"``opt''"'!="")
@@ -188,6 +185,9 @@ program Estimate, eclass
     else if "`percentile'"!="" {
         _parse_stats_num "`percentile'" `"`percentile2'"' ">=0 <=100"
     }
+    else if "`quantile'"!="" {
+        _parse_stats_num "`quantile'" `"`quantile2'"' ">=0 <=1"
+    }
     else { // pdf or cdf
         _parse_stats_num "`pdf'`cdf'" `"`pdf2'`cdf2'"' ""
     }
@@ -207,6 +207,7 @@ program Estimate, eclass
             exit 198
         }
     }
+    _parse_integrate `integrate2'
     if "`integrate'"!=""                   local integrate2 ""
     else if !inlist("`method'","qr","qr0") local integrate2 ""
     
@@ -272,17 +273,18 @@ program Estimate, eclass
     _nobs `touse' `wgt'
     local N = r(N)
     qui levelsof `by' if `touse'
-    if r(r)!=2 {
+    local bylevels `r(levels)'
+    if `:list sizeof bylevels'!=2 {
         di as err "{bf:by()} must identify two groups"
         exit 498
     }
     if "`swap'"!="" {
-        local by0: word 2 of `r(levels)'
-        local by1: word 1 of `r(levels)'
+        local by0: word 2 of `bylevels'
+        local by1: word 1 of `bylevels'
     }
     else {
-        local by0: word 1 of `r(levels)'
-        local by1: word 2 of `r(levels)'
+        local by0: word 1 of `bylevels'
+        local by1: word 2 of `bylevels'
     }
     forv i = 0/1 {
         tempname touse`i'
@@ -325,7 +327,7 @@ program Estimate, eclass
     }
     
     // estimate
-    tempname b
+    tempname b AT
     gettoken depvar xvars : varlist
     _fv_check_depvar `depvar'
     local xvars `xvars'
@@ -340,14 +342,14 @@ program Estimate, eclass
     eret local method        "`method'"
     eret local indepvars     "`xvars'"
     eret local by            "`by'"
+    eret local eqnames       "`eqs'"
     eret local pooled        "`pooled'"
     eret local jmp           "`jmp'"
-    eret local qdef          "`qdef'"
     eret local statistics    "`statistics'"
-    eret local percentile    "`percentile2'"
-    eret local pdf           "`pdf2'"
-    eret local cdf           "`cdf2'"
-    eret local eqnames       "`eqs'"
+    if "`percentile'`quantile'`pdf'`cdf'"!="" {
+        eret local coeftype  "`percentile'`quantile'`pdf'`cdf'"
+        eret matrix at       = `AT'
+    }
     eret scalar N0           = `N0'
     eret scalar N1           = `N1'
     eret scalar by0          = `by0'
@@ -356,11 +358,19 @@ program Estimate, eclass
     eret scalar gsize0       = `gsize0'
     eret scalar gsize1       = `gsize1'
     if "`integrate2'"!="" {
-        eret scalar integrate    = `integrate2'
+        eret scalar integrate = `integrate2'
+        eret scalar integ_pad = `integ_pad'
     }
     eret scalar k            = `k'
     eret scalar k_eq         = `: list sizeof eqs'
+    eret scalar qdef         = `qdef'
     eret local generate "`generate'"
+    if ("`B0'"!="")    eret matrix B0  = `B0'
+    if ("`AT0'"!="")   eret matrix AT0 = `AT0'
+    if ("`B1'"!="")    eret matrix B1  = `B1'
+    if ("`AT1'"!="")   eret matrix AT1 = `AT1'
+    if ("`B0loc'"!="") eret matrix B0loc = `B0loc'
+    if ("`B1loc'"!="") eret matrix B1loc = `B1loc'
     
     // generate: rename tempvars
     if `ngen'==0 exit
@@ -400,6 +410,19 @@ program _parse_jmp
     }
     if "`jmp'"=="" local jmp median
     c_local jmp `jmp'
+end
+
+program _parse_integrate
+    args n pad
+    if "`n'"==""   local n   1000
+    if "`pad'"=="" local pad 5
+    capt n numlist "`n'", integer range(>0)
+    if _rc {
+        di as err "error in integrate()"
+        exit _rc
+    }
+    c_local integrate2 `n'
+    c_local integ_pad  `pad'
 end
 
 program _parse_statistics
@@ -830,7 +853,8 @@ struct CDIST {
                            xvars,   // varnames of covariates
                            wvar     // varname of weights
     real scalar            g,       // target size of approximation grid
-                           nint,    // number of integration points (qr)
+                           int_n,   // number of integration points (qr)
+                           int_p,   // padding proportion of integration grid
                            pooled,  // used pooled X distribution
                            dots     // display progress dots
     string rowvector       eqs      // equations to be included in results
@@ -859,10 +883,10 @@ struct CDIST_S {
 
 struct CDIST_G {
     string scalar          touse    // varname of group identifier
-    real scalar            g,       // size of approximation grid
-                           p        // evaluation grid (probabilities)
+    real scalar            g        // size of approximation grid
     real colvector         y,       // depvar
-                           w        // weights
+                           w,       // weights
+                           p        // evaluation grid (probabilities)
     real matrix            X        // covariates
     real matrix            b        // regression coefficients
     real colvector         bl       // coefficients of location regression
@@ -924,7 +948,8 @@ void cdist()
     S.jmp    = st_local("jmp")
     S.pooled = st_local("pooled")!=""
     S.g      = strtoreal(st_local("gsize"))
-    S.nint   = strtoreal(st_local("integrate2"))
+    S.int_n  = strtoreal(st_local("integrate2"))
+    S.int_p  = strtoreal(st_local("integ_pad"))/100
     S.eqs = tokens(st_local("eqs"))
     S.touse = st_local("touse")
     S.xvars = st_local("XVARS")
@@ -1003,6 +1028,9 @@ void cdist()
     st_local("gsize0", strofreal(G0.g))
     st_local("gsize1", strofreal(G1.g))
     st_local("k",      strofreal(S.s.k))
+    if (length(S.s.at)) st_matrix(st_local("AT"), S.s.at')
+    _cdist_store_coefs(S, G0, "0")
+    _cdist_store_coefs(S, G1, "1")
     // store distribution functions in data (if requested)
     _cdist_store(S, G0, G1, tokens(st_local("tmpgen")))
 }
@@ -1011,25 +1039,21 @@ string colvector _cdist_stats_setup(struct CDIST scalar S)
 {
     string colvector s
 
-    S.s.typ = st_local("percentile") + st_local("cdf") + st_local("pdf")
+    S.s.typ = st_local("percentile") + st_local("quantile") + st_local("cdf") +
+              st_local("pdf")
     if (S.s.typ=="") return(J(0,1,""))
     if (st_local(S.s.typ+"2")!="") {
         s = tokens(st_local(S.s.typ+"2"))'
-        if (S.s.typ=="percentile") S.s.at = strtoreal(s) / 100
-        else                       S.s.at = strtoreal(s)
+        S.s.at = strtoreal(s)
         S.s.k = length(s)
     }
     else {
         S.s.k = strtoreal(st_local(S.s.typ+"_k"))
         if (S.s.k>=.) S.s.k = 9
-        if (S.s.typ=="percentile") {
-            S.s.at = (1::S.s.k) / (S.s.k + 1)
-            s      = strofreal(S.s.at * 100)
-        }
-        else {
-            S.s.at = rangen(_ymin(S), _ymax(S), S.s.k)
-            s      = strofreal(S.s.at)
-        }
+        if (S.s.typ=="percentile")    S.s.at = (1::S.s.k) / (S.s.k + 1) * 100
+        else if (S.s.typ=="quantile") S.s.at = (1::S.s.k) / (S.s.k + 1)
+        else                          S.s.at = rangen(_ymin(S), _ymax(S), S.s.k)
+        s = strofreal(S.s.at)
         st_local(S.s.typ+"2", invtokens(s'))
     }
     if (S.s.typ=="pdf") _cdist_pdf_bw(S)
@@ -1132,6 +1156,42 @@ void _store_addobs(real scalar n)
     stata("replace \`touse' = 0 if \`touse'>=.", 1) // fix e(sample)
 }
 
+// function to copy coefficients to Stata
+
+void _cdist_store_coefs(struct CDIST scalar S, struct CDIST_G scalar G,
+    string scalar g)
+{
+    string scalar    nm
+    string rowvector xvars
+    string matrix    cs
+    
+    if (!length(G.b) & !length(G.bl)) return
+    cs = tokens(st_local("xvars")), "_cons"
+    cs = J(length(cs),1,""), cs'
+    if (length(G.b)) {
+        nm = st_tempname()
+        st_local("B"+g, nm)
+        if (S.method=="logit") {
+            st_matrix(nm, G.b')
+            st_matrixcolstripe(nm, cs)
+        }
+        else {
+            st_matrix(nm, G.b')
+            st_matrixcolstripe(nm, cs)
+        }
+        nm = st_tempname()
+        st_local("AT"+g, nm)
+        if (S.method=="logit") st_matrix(nm, (*G.Y.fit)[|1\G.g|])
+        else                   st_matrix(nm, G.p)
+    }
+    if (length(G.bl)) {
+        nm = st_tempname()
+        st_local("B"+g+"loc", nm)
+        st_matrix(nm, G.bl')
+        st_matrixcolstripe(nm, cs)
+    }
+}
+
 // function to generate predictions
 
 real colvector _cdist_Xb(real matrix X, real colvector b, real scalar k)
@@ -1163,10 +1223,10 @@ void _cdist_qr(struct CDIST scalar S, struct CDIST_G scalar G,
     _cdist_progress_done(D)
     _cdist_progress_init(D, 0, "enumerating predictions ...")
     // setup integration grid (with 5% padding on each side)
-    if (S.nint<.) {
+    if (S.int_n<.) {
         G.Y.fit = G.Y.adj = G.Y.loc =
-            &rangen(_ymin(S) - _yrange(S)*0.05,
-                    _ymax(S) + _yrange(S)*0.05, S.nint)
+            &rangen(_ymin(S) - _yrange(S)*S.int_p,
+                    _ymax(S) + _yrange(S)*S.int_p, S.int_n)
     }
     // obtain fit
     if (todo[1]) {
@@ -1214,7 +1274,7 @@ void _cdist_qr_p(pointer scalar Y, pointer scalar W, real matrix X,
             *W = *W + (mm_diff(0 \ F) :- *W) / i // mean updating
         }
          // some mass will be missing if there are predictions larger than
-         // max(Y); at the missing mass at the top
+         // max(Y); add the missing mass to the top
         (*W)[n] = (*W)[n] + w:*rows(X) - quadsum(*W)
     }
     else {
@@ -1288,10 +1348,10 @@ void _cdist_dr(struct CDIST scalar S, struct CDIST_G scalar G,
     if (mm_nunique(G.y)<=S.g) *G.Y.fit = mm_unique(G.y) // use observed values
     else {
         G.p = (1::S.g)/S.g:-.5/S.g
-        G.Y.fit = G.Y.adj =
-            &mm_unique(mm_quantile(G.y, G.w, G.p \ 1, 1/*low quantile*/))
+        G.Y.fit = &mm_unique(mm_quantile(G.y, G.w, G.p \ 1, 1/*low quantile*/))
     }
     G.g = rows(*G.Y.fit) - 1 // last element is maximum
+    G.Y.adj = G.Y.fit
     // estimate coefficients
     D.dots = S.dots
     _cdist_progress_init(D, G.g, "group "+g+": fitting models")
@@ -1363,7 +1423,8 @@ real colvector _cdist_stats(real colvector y, real colvector w,
     real colvector   b
     real matrix      tmp
     
-    if (s.typ=="percentile") return(mm_quantile(y, w, s.at, s.qdef))
+    if (s.typ=="percentile") return(mm_quantile(y, w, s.at/100, s.qdef))
+    if (s.typ=="quantile")   return(mm_quantile(y, w, s.at, s.qdef))
     if (s.typ=="cdf")        return(mm_relrank(y, w, s.at))
     if (s.typ=="pdf")        return(_cdist_stats_pdf(y, w, s))
     i = s.k
