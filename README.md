@@ -19,6 +19,9 @@ Stata 14 (or newer) and [`moremata`](https://github.com/benjann/moremata)
 
 Main changes:
 
+    18mar2023 (version 1.0.2)
+    - density estimation options can now be specified in option pdf()
+
     18mar2023 (version 1.0.1)
     - help file completed
     - can now specify the padding percentage in intergate()

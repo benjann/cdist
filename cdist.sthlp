@@ -90,7 +90,7 @@
     {cmd:cdist decomp}.
 
 
-{synoptset 24 tabbed}{...}
+{synoptset 20 tabbed}{...}
 {marker opt}{...}
 {p2coldent :{help cdist##options:{it:options}}}Description{p_end}
 {synoptline}
@@ -108,16 +108,16 @@
 {syntab :Target statistics}
 {synopt :{cmdab:s:tatistics(}{help cdist##stats:stats}{cmd:)}}statistics to be calculated
     {p_end}
-{synopt :{opt p:ercentile}[{cmd:(#}{it:#}|{help numlist:{it:nlist}}{cmd:)}]}calculate
+{synopt :{opt p:ercentile}[{cmd:(}{help cdist##percentile:{it:spec}}{cmd:)}]}calculate
     percentiles; alternative to {cmd:statistics()}
     {p_end}
-{synopt :{opt q:uantile}[{cmd:(#}{it:#}|{help numlist:{it:numlist}}{cmd:)}]}calculate
+{synopt :{opt q:uantile}[{cmd:(}{help cdist##quantile:{it:spec}}{cmd:)}]}calculate
     quantiles; alternative to {cmd:statistics()}
     {p_end}
-{synopt :{opt pdf}[{cmd:(#}{it:#}|{help numlist:{it:numlist}}{cmd:)}]}calculate
+{synopt :{opt pdf}[{cmd:(}{help cdist##pdf:{it:spec}}{cmd:)}]}calculate
     density function; alternative to {cmd:statistics()}
     {p_end}
-{synopt :{opt cdf}[{cmd:(#}{it:#}|{help numlist:{it:numlist}}{cmd:)}]}calculate
+{synopt :{opt cdf}[{cmd:(}{help cdist##cdf:{it:spec}}{cmd:)}]}calculate
     distribution function; alternative to {cmd:statistics()}
     {p_end}
 {synopt :{opt qdef(#)}}quantile definition; # in {0,..,11}
@@ -174,7 +174,6 @@
     {p_end}
 {synoptline}
 
-{synoptset 24 tabbed}{...}
 {marker decompopt}{...}
 {p2coldent :{help cdist##decompoptions:{it:decomp_options}}}Description{p_end}
 {synoptline}
@@ -272,22 +271,65 @@
     Only one of {cmd:statistics()}, {opt percentile()}, {opt quantile()}, {opt pdf()}, and {opt cdf()}
     is allowed. The default is {cmd:statistics(mean)}.
 
+{marker percentile}{...}
 {phang}
     {opt percentile}[{cmd:(#}{it:#}|{it:numlist}{cmd:)}] reports quantiles (percentiles), either
     at {it:#} equally-spaced percentages between 0 and 100, or at the percentages specified in {it:{help numlist}}. Specifying
     {cmd:percentile} without argument is equivalent to {cmd:percentile(#9)}.
 
+{marker quantile}{...}
 {phang}
     {opt quantile}[{cmd:(#}{it:#}|{it:numlist}{cmd:)}] reports quantiles, either
     at {it:#} equally-spaced proportions between 0 and 1, or at the proportions specified in {it:{help numlist}}. Specifying
     {cmd:quantile} without argument is equivalent to {cmd:quantile(#9)}.
 
+{marker pdf}{...}
 {phang}
-    {opt pdf}[{cmd:(#}{it:#}|{it:numlist}{cmd:)}] reports density estimates, either
+    {opt pdf}[{cmd:(#}{it:#}|{it:numlist}[{cmd:,} {it:pdfopts}]{cmd:)}] reports density estimates, either
     at {it:#} equally-spaced outcome values across the range of {it:depvar}, or at the outcome values
     specified in {it:{help numlist}}. Specifying {cmd:pdf} without argument is equivalent to
-    {cmd:pdf(#9)}.
+    {cmd:pdf(#9)}. {it:pdfopts} are as follows (see {helpb mf_mm_density:mm_density()} for more information).
 
+{phang2}
+    {cmdab:bw:idth(}{it:#}|{it:method}{cmd:)} sets the bandwidth to {it:#} or, alternatively,
+    specifies the type of automatic bandwidth selector to be used. {it:method} can be
+    {cmdab:s:ilverman} (optimal of Silverman),
+    {cmdab:o:versmoothed} (oversmoothed rule),
+    {opt sj:pi} (Sheather-Jones solve-the-equation plug-in),
+    {cmdab:d:pi}[{cmd:(}{it:#}{cmd:)}] (Sheather-Jones direct plug-in,
+        where {it:#} specifies the number of stages of functional estimation;
+        default is {cmd:2}), or
+    {opt isj} (diffusion estimator bandwidth). The default is {cmd:bwidth(dpi(2))}
+
+{phang2}
+    {opt k:ernel(kernel)} specifies the kernel function. {it:kernel} may
+    be {opt e:panechnikov}, {opt epan2} (alternative Epanechnikov kernel
+    function), {opt b:iweight}, {opt triw:eight}, {opt c:osine},
+    {opt g:aussian}, {opt p:arzen}, {opt r:ectangle} or {opt t:riangle}. The default
+    is {cmd:kernel(gaussian)}.
+
+{phang2}
+    {opt adapt:ive(#)} specifies the number of iterations used by the adaptive
+    kernel density estimator. The default is {cmd:adaptive(0)} (non-adaptive
+    density estimator).
+
+{phang2}
+    {opt ll(#)} specifies the lower boundary of the support of data and causes
+    boundary-correction to be applied to the density estimate. Error will be
+    returned if the data contains values smaller than {it:#}.
+
+{phang2}
+    {opt ul(#)} specifies the upper boundary of the support of data and causes
+    boundary-correction to be applied to the density estimate. Error will be
+    returned if the data contains values larger than {it:#}.
+
+{phang2}
+    {opt bo:undary(method)} sets the type of boundary correction. Choices are
+    {opt ren:orm} (renormalization method; the default), {opt refl:ect} (reflection method), or
+    {opt lc} (linear combination technique). This is only relevant if {cmd:ll()} or {cmd:ul()}
+    has been specified.
+
+{marker cdf}{...}
 {phang}
     {opt cdf}[{cmd:(#}{it:#}|{it:numlist}{cmd:)}] reports the cumulative distribution function, either
     at {it:#} equally-spaced outcome values across the range of {it:depvar}, or at the outcome values
@@ -455,6 +497,10 @@
 {synopt:{cmd:e(gsize0)}}realized grid size in group 0{p_end}
 {synopt:{cmd:e(gsize1)}}realized grid size in group 1{p_end}
 {synopt:{cmd:e(qdef)}}quantile definition{p_end}
+{synopt:{cmd:e(pdf_bwidth)}}bandwidth used for density estimation (if relevant){p_end}
+{synopt:{cmd:e(pdf_adaptive)}}number of iterations of adaptive density estimator (if relevant){p_end}
+{synopt:{cmd:e(pdf_ll)}}lower boundary of support for density estimation (if relevant){p_end}
+{synopt:{cmd:e(pdf_ul)}}upper boundary of support for density estimation (if relevant){p_end}
 {synopt:{cmd:e(integrate)}}number of integration points (if relevant){p_end}
 {synopt:{cmd:e(integ_pad)}}integration padding percentage (if relevant){p_end}
 {synopt:{cmd:e(k)}}number of coefficients per equation in {cmd:e(b)}{p_end}
@@ -471,6 +517,9 @@
 {synopt:{cmd:e(jmp)}}{cmd:median}, {cmd:mean}, or empty{p_end}
 {synopt:{cmd:e(statistics)}}specification from {cmd:statistics()}{p_end}
 {synopt:{cmd:e(coeftype)}}{cmd:quantile}, {cmd:percentile}, {cmd:pdf}, {cmd:cdf}, or empty{p_end}
+{synopt:{cmd:e(pdf_kernel)}}kernel used for density estimation (if relevant){p_end}
+{synopt:{cmd:e(pdf_bwmethod)}}bandwidth selector used for density estimation (if relevant){p_end}
+{synopt:{cmd:e(pdf_boundary)}}boundary correction method used for density estimation (if relevant){p_end}
 {synopt:{cmd:e(eqnames)}}names of equations in {cmd:e(b)}{p_end}
 {synopt:{cmd:e(generate)}}names of generated variables{p_end}
 {synopt:{cmd:e(wtype)}}weight type{p_end}

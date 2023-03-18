@@ -1,4 +1,4 @@
-*! version 1.0.1  18mar2023  Ben Jann
+*! version 1.0.2  18mar2023  Ben Jann
 
 capt mata: assert(mm_version()>=201)
 if _rc {
@@ -96,6 +96,10 @@ program Display, rclass
         if `"`e(coeftype)'"'!="" {
             di as txt _col(`c1') "Coefficient type" _col(`c2') "=" /*
             */ _col(`c3') as res  %`w2's e(coeftype)
+            if "`e(coeftype)'"=="pdf" {
+                di as txt _col(`c1') "PDF bandwidth" _col(`c2') "=" /*
+                    */ _col(`c3') as res %`w2'.0g e(pdf_bwidth)
+            }
         }
         di ""
     }
@@ -188,8 +192,13 @@ program Estimate, eclass
     else if "`quantile'"!="" {
         _parse_stats_num "`quantile'" `"`quantile2'"' ">=0 <=1"
     }
-    else { // pdf or cdf
-        _parse_stats_num "`pdf'`cdf'" `"`pdf2'`cdf2'"' ""
+    else if "`pdf'"!="" { // pdd
+        _parse comma pdf2 pdfopts : pdf2 
+        _parse_stats_num "`pdf'" `"`pdf2'"' ""
+        _parse_pdfopts `pdfopts'
+    }
+    else { // cdf
+        _parse_stats_num "`cdf'" `"`cdf2'"' ""
     }
     
     // method
@@ -327,7 +336,7 @@ program Estimate, eclass
     }
     
     // estimate
-    tempname b AT
+    tempname b AT BW
     gettoken depvar xvars : varlist
     _fv_check_depvar `depvar'
     local xvars `xvars'
@@ -364,7 +373,23 @@ program Estimate, eclass
     eret scalar k            = `k'
     eret scalar k_eq         = `: list sizeof eqs'
     eret scalar qdef         = `qdef'
-    eret local generate "`generate'"
+    if "`pdf'"!="" {
+        eret scalar pdf_bwidth = `BW'
+        if "`pdf_bwmethod'"!="" {
+            if "`pdf_bwmethod'"=="dpi" {
+                local pdf_bwmethod `pdf_bwmethod'(`pdf_bwdpi')
+            }
+            eret local pdf_bwmethod "`pdf_bwmethod'"
+        }
+        eret local pdf_kernel    "`pdf_kernel'"
+        eret scalar pdf_adaptive = `pdf_adaptive'
+        if `pdf_ll'<. | `pdf_ul'<. {
+            eret local pdf_boundary "`pdf_boundary'"
+            if `pdf_ll'<. eret scalar pdf_ll = `pdf_ll'
+            if `pdf_ll'<. eret scalar pdf_ul = `pdf_ul'
+        }
+    }
+    eret local generate      "`generate'"
     if ("`B0'"!="")    eret matrix B0  = `B0'
     if ("`AT0'"!="")   eret matrix AT0 = `AT0'
     if ("`B1'"!="")    eret matrix B1  = `B1'
@@ -383,46 +408,6 @@ program Estimate, eclass
         }
         rename `tmpv' `v'
     }
-end
-
-program _parse_method
-    cap n syntax [, qr qr0 Logit ]
-    if _rc {
-        di as err "error in {bf:method()}"
-        exit 198
-    }
-    
-    local method `qr' `qr0' `logit'
-    if `:list sizeof method'>1 {
-        di as err "only one method allowed"
-        exit 198
-    }
-    if "`method'"=="" local method logit
-    c_local method `method'
-end
-
-program _parse_jmp
-    syntax [, MEDian mean ]
-    local jmp `median' `mean'
-    if `: list sizeof jmp'>1 {
-        di as err "{bf:jmp()}: only one keyword allowed"
-        exit 198
-    }
-    if "`jmp'"=="" local jmp median
-    c_local jmp `jmp'
-end
-
-program _parse_integrate
-    args n pad
-    if "`n'"==""   local n   1000
-    if "`pad'"=="" local pad 5
-    capt n numlist "`n'", integer range(>0)
-    if _rc {
-        di as err "error in integrate()"
-        exit _rc
-    }
-    c_local integrate2 `n'
-    c_local integ_pad  `pad'
 end
 
 program _parse_statistics
@@ -496,6 +481,128 @@ program _parse_stats_num
     }
     c_local `nm'2  "`nlist'"
     c_local `nm'_k "`k'"
+end
+
+program _parse_pdfopts
+    syntax [, ///
+        BWidth(str) Kernel(string) ADAPTive(numlist int >=0 max=1) ///
+        ll(numlist max=1 missingok) ul(numlist max=1 missingok) ///
+        BOundary(str) ]
+    if "`ll'"=="" local ll .
+    if "`ul'"=="" local ul .
+    if `ll'<. & `ll'>`ul' {
+        di as err "{bf:pdf(,ll())} may not be larger than {bf:pdf(,ul())}"
+        exit 198
+    }
+    _parse_pdfopts_bw `bwidth'
+    if `"`kernel'"'=="" local kernel "gaussian"
+    if "`adaptive'"=="" local adaptive 0
+    _parse_pdfopts_boundary, `boundary'
+    c_local pdf_bwidth `bwidth'
+    c_local pdf_bwmethod `bwmethod'
+    c_local pdf_bwdpi `bwdpi'
+    c_local pdf_kernel `"`kernel'"'
+    c_local pdf_adaptive `adaptive'
+    c_local pdf_ll `ll'
+    c_local pdf_ul `ul'
+    c_local pdf_boundary `boundary'
+end
+
+program _parse_pdfopts_bw // returns: bwidth, bwmethod, bwdpi
+    // case 1: bwidth(numlist) => return bwidth
+    capt numlist `"`0'"'
+    if _rc==1 exit _rc
+    if _rc==0 {
+        local 0 `", bwidth(`0')"'
+        capt n syntax, bwidth(numlist >0 max=1)
+        if _rc==1 exit _rc
+        if _rc {
+            di as err "error in option {bf:pdf(,bwidth())}"
+            exit _rc
+        }
+        c_local bwidth `"`bwidth'"'
+        exit
+    }
+    // case 2; bwidth(method) => return bwmethod, bwdpi
+    local 0 `", `0'"'
+    capt n syntax [, Silverman Normalscale Oversmoothed SJpi /*
+        */ Dpi Dpi2(numlist int >=0 max=1) ISJ ]
+    if _rc==1 exit _rc
+    if _rc {
+        di as err "error in option {bf:pdf(,bwidth())}"
+        exit 198
+    }
+    if "`dpi2'"!="" local dpi dpi
+    local bwmethod `silverman' `normalscale' `oversmoothed' `sjpi' `dpi' `isj'
+    if "`bwmethod'"=="" {
+        local bwmethod "dpi"
+        local dpi2 2
+    }
+    if `: list sizeof bwmethod'>1 {
+        di as err "too many methods specified"
+        di as err "error in option {bf:pdf(,bwidth())}"
+        exit 198
+    }
+    c_local bwidth
+    c_local bwmethod `bwmethod'
+    c_local bwdpi `dpi2'
+end
+
+program _parse_pdfopts_boundary // returns: boundary
+    capt n syntax [, RENorm REFlect lc ]
+    if _rc==1 exit _rc
+    if _rc {
+        di as err "error in option {bf:pdf(,boundary())}"
+        exit 198
+    }
+    local boundary `renorm' `reflect' `lc'
+    if "`boundary'"=="" local boundary "renorm"
+    if `: list sizeof boundary'>1 {
+        di as err "too many methods specified"
+        di as err "error in option {bf:pdf(,boundary())}"
+        exit 198
+    }
+    c_local boundary `boundary'
+end
+
+program _parse_method
+    cap n syntax [, qr qr0 Logit ]
+    if _rc {
+        di as err "error in {bf:method()}"
+        exit 198
+    }
+    
+    local method `qr' `qr0' `logit'
+    if `:list sizeof method'>1 {
+        di as err "only one method allowed"
+        exit 198
+    }
+    if "`method'"=="" local method logit
+    c_local method `method'
+end
+
+program _parse_jmp
+    syntax [, MEDian mean ]
+    local jmp `median' `mean'
+    if `: list sizeof jmp'>1 {
+        di as err "{bf:jmp()}: only one keyword allowed"
+        exit 198
+    }
+    if "`jmp'"=="" local jmp median
+    c_local jmp `jmp'
+end
+
+program _parse_integrate
+    args n pad
+    if "`n'"==""   local n   1000
+    if "`pad'"=="" local pad 5
+    capt n numlist "`n'", integer range(>0)
+    if _rc {
+        di as err "error in integrate()"
+        exit _rc
+    }
+    c_local integrate2 `n'
+    c_local integ_pad  `pad'
 end
 
 program _parse_generate
@@ -1031,6 +1138,7 @@ void cdist()
     if (length(S.s.at)) st_matrix(st_local("AT"), S.s.at')
     _cdist_store_coefs(S, G0, "0")
     _cdist_store_coefs(S, G1, "1")
+    if (S.s.typ=="pdf") st_numscalar(st_local("BW"), S.s.bw)
     // store distribution functions in data (if requested)
     _cdist_store(S, G0, G1, tokens(st_local("tmpgen")))
 }
@@ -1056,17 +1164,23 @@ string colvector _cdist_stats_setup(struct CDIST scalar S)
         s = strofreal(S.s.at)
         st_local(S.s.typ+"2", invtokens(s'))
     }
-    if (S.s.typ=="pdf") _cdist_pdf_bw(S)
+    if (S.s.typ=="pdf") _cdist_pdf_setup(S)
     return(s)
 }
 
-void _cdist_pdf_bw(struct CDIST scalar S)
+void _cdist_pdf_setup(struct CDIST scalar S)
 {
-    S.s.D.bw("dpi")
-    S.s.D.data(*S.y0, *S.w0, S.s.pw)
-    S.s.bw = S.s.D.h()
-    S.s.D.data(*S.y1, *S.w1, S.s.pw)
-    S.s.bw = (S.s.bw + S.s.D.h()) / 2
+    S.s.D.kernel(st_local("pdf_kernel"), strtoreal(st_local("pdf_adaptive")))
+    S.s.D.support(strtoreal((st_local("pdf_ll"), st_local("pdf_ul"))), 
+        st_local("pdf_boundary")=="lc" ? "linear" : st_local("pdf_boundary"))
+    if (st_local("pdf_bwidth")!="") S.s.bw = strtoreal(st_local("pdf_bwidth"))
+    else {
+        S.s.D.bw(st_local("pdf_bwmethod"), ., strtoreal(st_local("pdf_bwdpi")))
+        S.s.D.data(*S.y0, *S.w0, S.s.pw)
+        S.s.bw = S.s.D.h()
+        S.s.D.data(*S.y1, *S.w1, S.s.pw)
+        S.s.bw = (S.s.bw + S.s.D.h()) / 2
+    }
 }
 
 // functions for progress dots
@@ -1260,7 +1374,7 @@ void _cdist_qr_p(pointer scalar Y, pointer scalar W, real matrix X,
     // Variant 1: nointegrate
     if (Y==NULL) {
         n = rows(X)
-        Y = &J(n*g, 1, 0)
+        Y = &J(n*g, 1, .)
         for (i=1;i<=g;i++) (*Y)[|(i-1)*n+1 \ i*n|] = _cdist_Xb(X, B[,i], k)
         W = &(rows(w)==1 ? w/g : J(g, 1, w/g))
         return
