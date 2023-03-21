@@ -20,6 +20,15 @@ Stata 14 (or newer) and [`moremata`](https://github.com/benjann/moremata)
 
 Main changes:
 
+    21mar2023  (version 1.0.5)
+    - option -swap- added to -dstat decomp-
+    - option jmp: now using preprocessing algorithm also for median regression
+      (unless method is set to qr0)
+    - integration of qr predictions could yield slightly negative weights due to
+      limited computer precision; this is fixed
+    - a bug in the qr preprocessing algorithm could lead to grossly wrong results
+      in some situations; this is fixed
+
     21mar2023 (version 1.0.4)
     - collinear predictors caused error with method(logit); this is fixed
 

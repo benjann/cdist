@@ -183,6 +183,8 @@
     {p_end}
 {synopt :{opt three:fold}}report threefold decomposition
     {p_end}
+{synopt :{opt swap}}swap the groups
+    {p_end}
 {synoptline}
 
 
@@ -198,7 +200,9 @@
 {pstd}
     For an alternative implementation of these (and related) methods
     see package {helpb counterfactual} by Blaise Melly (type
-    {stata "net from https://raw.githubusercontent.com/bmelly/Stata/main/"}).
+    {stata "net from https://raw.githubusercontent.com/bmelly/Stata/main/"}; the
+    package also includes commands {helpb cdeco} and {helpb cdeco_jmp} to perform
+    counterfactual decompositions).
 
 
 {title:Dependencies}
@@ -465,6 +469,9 @@
     option {cmd:pooled} has been applied. Only one of {cmd:average} and
     {cmd:threefold} is allowed.
 
+{phang}
+    {opt swap} interchanges the roles of the two groups.
+
 
 {title:Examples}
 
@@ -619,4 +626,5 @@
 {psee}
     Online:  help for
     {helpb logit}, {helpb qreg}, {helpb counterfactual} (if installed),
-    {helpb oaxaca} (if installed), {helpb moremata} (if installed)
+    {helpb cdeco} (if installed), {helpb oaxaca} (if installed),
+    {helpb moremata} (if installed)

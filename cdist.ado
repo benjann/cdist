@@ -1,4 +1,4 @@
-*! version 1.0.4  21mar2023  Ben Jann
+*! version 1.0.5  21mar2023  Ben Jann
 
 capt mata: assert(mm_version()>=201)
 if _rc {
@@ -263,9 +263,9 @@ program Estimate, eclass
             di as err "{bf:decomp()} and {bf:lincom()} not both allowed"
             exit 108
         }
-        _parse_decomp, `decomp2' // updates d_reverse, d_average, d_threefold
+        _parse_decomp, `decomp2' // d_reverse, d_average, d_threefold, d_swap
         _Decomp_lincom "`pooled'" "`jmp'" "`d_reverse'" "`d_average'"/*
-            */ "`d_threefold'" // returns lincom
+            */ "`d_threefold'" "`d_swap'" // returns lincom
     }
     if `"`lincom'"'!="" {
         _parse_lincom "`eqs'" `"`lincom'"'
@@ -639,15 +639,15 @@ program Decomp
         di as err "last {bf:cdist} results not found"
         exit 301
     }
-    _parse_decomp * `0' // returns d_reverse, d_average, d_threefold, options
+    _parse_decomp * `0' // d_reverse, d_average, d_threefold, d_swap, options
     _Decomp_lincom `"`e(pooled)'"' `"`e(jmp)'"' "`d_reverse'" "`d_average'"/*
-            */ "`d_threefold'" // returns lincom
+            */ "`d_threefold'" "`d_swap'" // returns lincom
     Lincom `lincom', `options'
 end
 
 program _parse_decomp
     _parse comma star 0 : 0
-    capt n syntax [, REVerse AVErage THREEfold `star' ]
+    capt n syntax [, REVerse AVErage THREEfold swap `star' ]
     if _rc {
         if "`star'"=="" di as err "error in {bf:decomp()}"
         exit _rc
@@ -665,17 +665,26 @@ program _parse_decomp
     c_local d_reverse   `reverse'
     c_local d_average   `average'
     c_local d_threefold `threefold'
+    c_local d_swap      `swap'
     if "`star'"=="" exit
     c_local options `options'
 end
 
 program _Decomp_lincom
-    args pooled jmp reverse average threefold
+    args pooled jmp reverse average threefold swap
     local Delta Delta // Delta    difference
     local Chars Chars // Delta_X  composition characteristics
     local Coefs Coefs // Delta_S  mechanism   coefficients
     local Resid Resid // Delta_e  residual
     local Inter Inter // Delta_XS interaction
+    if "`swap'"!="" {
+        local 0 1
+        local 1 0
+    }
+    else {
+        local 0 0
+        local 1 1
+    }
     if `"`pooled'"'!="" {
         if "`reverse'"!="" {
             di as err "{bf:reverse} not allowed if {bf:pooled} has been specified"
@@ -689,9 +698,9 @@ program _Decomp_lincom
             di as err "{bf:threefold} not allowed if {bf:pooled} has been specified"
             exit 198
         }
-        local lincom (`Delta': fit0 - fit1) /*
-                  */ (`Chars': fit0 - adj0 + adj1 - fit1) /*
-                  */ (`Coefs': adj0 - adj1)
+        local lincom (`Delta': fit`0' - fit`1') /*
+                  */ (`Chars': fit`0' - adj`0' + adj`1' - fit`1') /*
+                  */ (`Coefs': adj`0' - adj`1')
     }
     else if `"`jmp'"'!="" {
         if "`threefold'"!="" {
@@ -699,53 +708,53 @@ program _Decomp_lincom
             exit 198
         }
         if "`average'"!="" {
-            local lincom (`Delta': fit0 - fit1) /*
-                      */ (`Chars': (fit0 - adj0 + adj1 - fit1)/2) /*
-                      */ (`Coefs': (adj0 - loc0 + loc1 - adj1)/2) /*
-                      */ (`Resid': (loc0 - fit1 + fit0 - loc1)/2)
+            local lincom (`Delta': fit`0' - fit`1') /*
+                      */ (`Chars': (fit`0' - adj`0' + adj`1' - fit`1')/2) /*
+                      */ (`Coefs': (adj`0' - loc`0' + loc`1' - adj`1')/2) /*
+                      */ (`Resid': (loc`0' - fit`1' + fit`0' - loc`1')/2)
         }
         else if "`reverse'"!="" {
-            local lincom (`Delta': fit0 - fit1) /*
-                      */ (`Chars': adj1 - fit1) /*
-                      */ (`Coefs': loc1 - adj1) /*
-                      */ (`Resid': fit0 - loc1)
+            local lincom (`Delta': fit`0' - fit`1') /*
+                      */ (`Chars': adj`1' - fit`1') /*
+                      */ (`Coefs': loc`1' - adj`1') /*
+                      */ (`Resid': fit`0' - loc`1')
         }
         else {
-            local lincom (`Delta': fit0 - fit1) /*
-                      */ (`Chars': fit0 - adj0) /*
-                      */ (`Coefs': adj0 - loc0) /*
-                      */ (`Resid': loc0 - fit1)
+            local lincom (`Delta': fit`0' - fit`1') /*
+                      */ (`Chars': fit`0' - adj`0') /*
+                      */ (`Coefs': adj`0' - loc`0') /*
+                      */ (`Resid': loc`0' - fit`1')
         }
     }
     else if "`average'"!="" {
-        local lincom (`Delta': fit0 - fit1) /*
-                  */ (`Chars': (fit0 - adj0 + adj1 - fit1)/2) /*
-                  */ (`Coefs': (fit0 - adj1 + adj0 - fit1)/2)
+        local lincom (`Delta': fit`0' - fit`1') /*
+                  */ (`Chars': (fit`0' - adj`0' + adj`1' - fit`1')/2) /*
+                  */ (`Coefs': (fit`0' - adj`1' + adj`0' - fit`1')/2)
     }
     else if "`reverse'"!="" {
         if "`threefold'"!="" {
-            local lincom (`Delta': fit0 - fit1) /*
-                      */ (`Chars': fit0 - adj0) /*
-                      */ (`Coefs': fit0 - adj1) /*
-                      */ (`Inter': adj0 + adj1 - fit0 - fit1)
+            local lincom (`Delta': fit`0' - fit`1') /*
+                      */ (`Chars': fit`0' - adj`0') /*
+                      */ (`Coefs': fit`0' - adj`1') /*
+                      */ (`Inter': adj`0' + adj`1' - fit`0' - fit`1')
         }
         else {
-            local lincom (`Delta': fit0 - fit1) /*
-                      */ (`Chars': adj1 - fit1) /*
-                      */ (`Coefs': fit0 - adj1)
+            local lincom (`Delta': fit`0' - fit`1') /*
+                      */ (`Chars': adj`1' - fit`1') /*
+                      */ (`Coefs': fit`0' - adj`1')
         }
     }
     else {
         if "`threefold'"!="" {
-            local lincom (`Delta': fit0 - fit1) /*
-                      */ (`Chars': adj1 - fit1) /*
-                      */ (`Coefs': adj0 - fit1) /*
-                      */ (`Inter': fit0 + fit1 - adj0 - adj1)
+            local lincom (`Delta': fit`0' - fit`1') /*
+                      */ (`Chars': adj`1' - fit`1') /*
+                      */ (`Coefs': adj`0' - fit`1') /*
+                      */ (`Inter': fit`0' + fit`1' - adj`0' - adj`1')
         }
         else {
-            local lincom (`Delta': fit0 - fit1) /*
-                      */ (`Chars': fit0 - adj0) /*
-                      */ (`Coefs': adj0 - fit1)
+            local lincom (`Delta': fit`0' - fit`1') /*
+                      */ (`Chars': fit`0' - adj`0') /*
+                      */ (`Coefs': adj`0' - fit`1')
         }
     }
     c_local lincom `lincom'
@@ -1104,8 +1113,8 @@ void cdist()
             G1.bl = mm_lsfit(G1.y, G1.X, G1.w)
         }
         else {
-            G0.bl = mm_qrfit(G0.y, G0.X, G0.w, 0.5)
-            G1.bl = mm_qrfit(G1.y, G1.X, G1.w, 0.5)
+            G0.bl = _cdist_lad(G0.y, G0.X, G0.w, S.method)
+            G1.bl = _cdist_lad(G1.y, G1.X, G1.w, S.method)
         }
     }
     // compute results
@@ -1315,6 +1324,39 @@ real colvector _cdist_Xb(real matrix X, real colvector b, real scalar k)
     return(X * b[|1 \ k|] :+ b[k+1])
 }
 
+// function to clip from below
+void _cdist_clipmin(real colvector x, real scalar min)
+{
+    real colvector p
+    
+    p = selectindex(x:<min)
+    if (length(p)) x[p] = J(length(p), 1, min)
+}
+
+// median regression, optionally using preprocessing algorithm 
+
+real colvector _cdist_lad(real colvector y, real matrix X, real colvector w,
+    string scalar method)
+{
+    real scalar        k, M, m, n
+    real rowvector     yLH
+    real matrix        XXinv
+    class mm_qr scalar Q
+    pragma unset XXinv
+    
+    if (method=="qr0") return(mm_qrfit(y, X, w, 0.5))
+    // preprocessing algorithm; see _cdist_qr_b() below
+    yLH = minmax(y)
+    yLH = 2*yLH[1] - yLH[2], 2*yLH[2] - yLH[1]
+    k = __cdist_qr_b_XXinv(y, X, w, XXinv)
+    n = rows(y)
+    m = 0.8
+    M = (k * n)^(2/3)
+    Q.p(0.5)
+    __cdist_qr_b_a1(Q, y, X, w, m, n, M, yLH, XXinv)
+    return(Q.b())
+}
+
 // subroutine to compute results based on quantile regression -----------------
 
 void _cdist_qr(struct CDIST scalar S, struct CDIST_G scalar G,
@@ -1388,9 +1430,11 @@ void _cdist_qr_p(pointer scalar Y, pointer scalar W, real matrix X,
             F = _mm_relrank(sort(_cdist_Xb(X, B[,i], k),1), w, *Y, 0, 1)
             *W = *W + (mm_diff(0 \ F) :- *W) / i // mean updating
         }
-         // some mass will be missing if there are predictions larger than
-         // max(Y); add the missing mass to the top
-        (*W)[n] = (*W)[n] + w:*rows(X) - quadsum(*W)
+        // some mass will be missing if there are predictions larger than
+        // max(Y); add the missing mass to the top
+        (*W)[n] = (*W)[n] + (w:*rows(X) - quadsum(*W))
+        // limited computer precision may lead to negative weights; fix this
+        _cdist_clipmin(*W, 0)
     }
     else {
         for (i=1;i<=g;i++) {
@@ -1399,7 +1443,9 @@ void _cdist_qr_p(pointer scalar Y, pointer scalar W, real matrix X,
             F = _mm_relrank(F[p], w[p], *Y, 0, 1)
             *W = *W + (mm_diff(0 \ F) :- *W) / i // mean updating
         }
-        (*W)[n] = (*W)[n] + quadsum(w) - quadsum(*W)
+        (*W)[n] = (*W)[n] + (quadsum(w) - quadsum(*W))
+        // limited computer precision may lead to negative weights; fix this
+        _cdist_clipmin(*W, 0)
     }
 }
 
@@ -1469,17 +1515,15 @@ real scalar __cdist_qr_b_XXinv(real colvector y, real matrix X,
     return(cols(X)+1-mm_ls_k_omit(S)) // k
 }
 
-real colvector __cdist_qr_b_z(real matrix X, real matrix XXinv,
-    real scalar min)
+real colvector __cdist_qr_b_z(real matrix X, real matrix XXinv)
 {
     real scalar    k
-    real colvector z, p
+    real colvector z
     
     k = cols(X)
     if (!k) return(1) // no covariates
     else    z = sqrt(rowsum((X * XXinv[|1,1\k,.|] :+ XXinv[k+1,]):^2))
-    p = selectindex(z:<min)
-    if (length(p)) z[p] = J(length(p), 1, min)
+    _cdist_clipmin(z, 1e-6)
     return(z)
 }
 
@@ -1493,7 +1537,7 @@ void __cdist_qr_b_a1(class mm_qr scalar Q, real colvector y, real matrix X,
     
     // compute z
     m = m0
-    if (trunc(m*M)<n) z = __cdist_qr_b_z(X, XXinv, 1e-6)
+    if (trunc(m*M)<n) z = __cdist_qr_b_z(X, XXinv)
     // outer loop (subsampling)
     while (1) {
         if (trunc(m*M)>=n) {
@@ -1518,7 +1562,9 @@ void __cdist_qr_b_a2(class mm_qr scalar Q, real colvector y, real matrix X,
     
     m = m0
     r = y - _cdist_Xb(X, b0, cols(X))
-    if (__cdist_qr_b_inner(Q, y, X, w, m, n, M, yLH, b0, r)) return
+    while (1) {
+        if (__cdist_qr_b_inner(Q, y, X, w, m, n, M, yLH, b0, r)) return
+    }
 }
 
 real scalar __cdist_qr_b_inner(class mm_qr scalar Q, real colvector y,
