@@ -19,6 +19,9 @@ Stata 14 (or newer) and [`moremata`](https://github.com/benjann/moremata)
 
 Main changes:
 
+    21mar2023 (version 1.0.4)
+    - collinear predictors caused error with method(logit); this is fixed
+
     21mar2023 (version 1.0.3)
     - method(qr) now uses preprocessing algorithms to fit the quantile regressions;
       old (much slower) method available as method(qr0)

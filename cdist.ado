@@ -1,4 +1,4 @@
-*! version 1.0.3  18mar2023  Ben Jann
+*! version 1.0.4  21mar2023  Ben Jann
 
 capt mata: assert(mm_version()>=201)
 if _rc {
@@ -1649,9 +1649,11 @@ real colvector _cdist_dr_F(real matrix X, real matrix B, real colvector w)
 void _cdist_dr_logit(struct CDIST scalar S, struct CDIST_G scalar G,
     struct CDIST_DOTS scalar D, real colvector y)
 {
-    real scalar   i, Y
-    string scalar Ynm, cmd
+    real scalar      i, Y
+    string scalar    Ynm, cmd
+    string rowvector xvars
     
+    xvars = tokens(S.xvars + " _cons")
     Ynm = st_tempname()
     Y   = st_addvar("byte", Ynm)
     cmd = "version 10: logit " + // use old logit version; less overhead
@@ -1661,10 +1663,32 @@ void _cdist_dr_logit(struct CDIST scalar S, struct CDIST_G scalar G,
     for (i=1; i<=G.g; i++) {
         st_store(., Y, G.touse, G.y:<=y[i])
         stata(cmd, 1)
-        G.b[,i] = st_matrix("e(b)")'
+        G.b[,i] = _cdist_dr_logit_collect_b(xvars)
         _cdist_progress_dot(D)
     }
     st_dropvar(Ynm)
+}
+
+real colvector _cdist_dr_logit_collect_b(string rowvector X)
+{
+    real scalar      i, j
+    string rowvector x
+    real colvector   B, b
+    
+    b = st_matrix("e(b)")'
+    i = rows(b)
+    j = cols(X)
+    if (i==j) return(b)
+    // some vars have been dropped; need to match names
+    x = st_matrixcolstripe("e(b)")[,2]'
+    B = J(j, 1, 0)
+    for (;j;j--) {
+        if (X[j]==x[i]) {
+            B[j] = b[i]
+            i--
+        }
+    }
+    return(B)
 }
 
 // subroutine to compute statistics from distribution -------------------------
