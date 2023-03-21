@@ -1,4 +1,4 @@
-*! version 1.0.2  18mar2023  Ben Jann
+*! version 1.0.3  18mar2023  Ben Jann
 
 capt mata: assert(mm_version()>=201)
 if _rc {
@@ -340,7 +340,9 @@ program Estimate, eclass
     gettoken depvar xvars : varlist
     _fv_check_depvar `depvar'
     local xvars `xvars'
-    fvrevar `xvars' if `touse' // create tempvars for factor variable terms
+    fvexpand `xvars' if `touse'
+    local Xvars `r(varlist)'
+    fvrevar `Xvars' if `touse' // create tempvars for factor variable terms
     local XVARS `r(varlist)'
     mata: cdist()
     
@@ -1276,11 +1278,10 @@ void _cdist_store_coefs(struct CDIST scalar S, struct CDIST_G scalar G,
     string scalar g)
 {
     string scalar    nm
-    string rowvector xvars
     string matrix    cs
     
     if (!length(G.b) & !length(G.bl)) return
-    cs = tokens(st_local("xvars")), "_cons"
+    cs = tokens(st_local("Xvars")), "_cons"
     cs = J(length(cs),1,""), cs'
     if (length(G.b)) {
         nm = st_tempname()
@@ -1332,7 +1333,7 @@ void _cdist_qr(struct CDIST scalar S, struct CDIST_G scalar G,
     D.dots = S.dots
     _cdist_progress_init(D, G.g, "group "+g+": fitting models")
     G.b = J(cols(G.X) + 1, G.g, .)
-    if (S.method=="qr0") _cdist_qr_b0(G, D)
+    if (S.method=="qr0") _cdist_qr0_b(G, D)
     else                 _cdist_qr_b(G, D)
     _cdist_progress_done(D)
     _cdist_progress_init(D, 0, "enumerating predictions ...")
@@ -1404,7 +1405,7 @@ void _cdist_qr_p(pointer scalar Y, pointer scalar W, real matrix X,
 
 // obtain quantile regressions
 
-void _cdist_qr_b0(struct CDIST_G scalar G, struct CDIST_DOTS scalar D)
+void _cdist_qr0_b(struct CDIST_G scalar G, struct CDIST_DOTS scalar D)
 {
     real scalar i
     
@@ -1414,36 +1415,176 @@ void _cdist_qr_b0(struct CDIST_G scalar G, struct CDIST_DOTS scalar D)
     }
 }
 
-// obtain quantile regressions; somewhat faster than _cdist_qr_b0()
+// obtain quantile regressions using preprocessing algorithm (see Algorithms 1
+// and 2 in Chernozhukov et al. 2022, Fast algorithms for the quantile
+// regression process, Empirical Economics 62:7–33)
 
 void _cdist_qr_b(struct CDIST_G scalar G, struct CDIST_DOTS scalar D)
 {
-    real scalar        i
-    real colvector     b_mid, b_i
+    real scalar        i, i0, j, k, M, m, n
+    real rowvector     yLH
+    real colvector     idx
+    real matrix        XXinv
     class mm_qr scalar Q
+    pragma unset XXinv
 
-    // get 1st estimate in middle
-    Q.data(G.y, G.X, G.w)
-    i = ceil(G.g/2)
+    // settings for preselection algorithm
+    // - lower and upper y-values for the "globs"
+    yLH = minmax(G.y)
+    yLH = 2*yLH[1] - yLH[2], 2*yLH[2] - yLH[1] // = (min-range, max+range)
+    // - setup indices for looping
+    i = ceil(G.g/2) // middle
+    idx = (i>1 ? 1::(i-1) : J(0,1,.)) \ (i<G.g ? -(G.g::(i+1)) : J(0,1,.))
+    // - get number of parameters and XXinv
+    k = __cdist_qr_b_XXinv(G.y, G.X, G.w, XXinv)
+    // get 1st estimate (in middle) using preprocessing algorithm 1
+    n = rows(G.y)
+    m = 0.8
+    M = (k * n)^(2/3)
     Q.p(G.p[i])
-    G.b[,i] = b_mid = b_i = Q.b()
-    i++
+    __cdist_qr_b_a1(Q, G.y, G.X, G.w, m, n, M, yLH, XXinv)
+    G.b[,i] = Q.b()
     _cdist_progress_dot(D)
-    // move up
-    for (; i<=G.g; i++) {
+    // obtain remaining estimates (first moving up, then moving down) using
+    // preprocessing algorithm 2
+    m = 1 // (Chernozhukov et al. use m = 3)
+    M = sqrt(k * n)
+    for (j=length(idx); j; j--) {
+        i  = abs(idx[j])
+        i0 = i + sign(idx[j])
         Q.p(G.p[i])
-        Q.b_init(b_i)
-        G.b[,i] = b_i = Q.b()
+        __cdist_qr_b_a2(Q, G.y, G.X, G.w, m, n, M, yLH, G.b[,i0])
+        G.b[,i] = Q.b()
         _cdist_progress_dot(D)
     }
-    // move down
-    i = ceil(G.g/2) - 1
-    b_i = b_mid
-    for (; i; i--) {
-        Q.p(G.p[i])
-        Q.b_init(b_i)
-        G.b[,i] = b_i = Q.b()
-        _cdist_progress_dot(D)
+}
+
+real scalar __cdist_qr_b_XXinv(real colvector y, real matrix X, 
+    real colvector w, real matrix XXinv)
+{
+    transmorphic S
+    
+    S = mm_ls(y, X, w)
+    XXinv = mm_ls_XXinv(S)
+    return(cols(X)+1-mm_ls_k_omit(S)) // k
+}
+
+real colvector __cdist_qr_b_z(real matrix X, real matrix XXinv,
+    real scalar min)
+{
+    real scalar    k
+    real colvector z, p
+    
+    k = cols(X)
+    if (!k) return(1) // no covariates
+    else    z = sqrt(rowsum((X * XXinv[|1,1\k,.|] :+ XXinv[k+1,]):^2))
+    p = selectindex(z:<min)
+    if (length(p)) z[p] = J(length(p), 1, min)
+    return(z)
+}
+
+void __cdist_qr_b_a1(class mm_qr scalar Q, real colvector y, real matrix X,
+    real colvector w, real scalar m0, real scalar n, real scalar M,
+    real rowvector yLH, real matrix XXinv)
+{
+    real scalar    m
+    real colvector b0, r, p
+    real colvector z
+    
+    // compute z
+    m = m0
+    if (trunc(m*M)<n) z = __cdist_qr_b_z(X, XXinv, 1e-6)
+    // outer loop (subsampling)
+    while (1) {
+        if (trunc(m*M)>=n) {
+            Q.data(y, X, w) // no subsampling
+            return
+        }
+        p = mm_srswor(trunc(m*M), n, 0, 1)
+        Q.data(y[p], X[p,], rows(w)!=1 ? w[p] : 1)
+        b0 = Q.b()
+        r = (y - _cdist_Xb(X, b0, cols(X))) :/ z
+        // inner loop (find solution)
+        if (__cdist_qr_b_inner(Q, y, X, w, m, n, M, yLH, b0, r)) return
+    }
+}
+
+void __cdist_qr_b_a2(class mm_qr scalar Q, real colvector y, real matrix X,
+    real colvector w, real scalar m0, real scalar n, real scalar M,
+    real rowvector yLH, real colvector b0)
+{
+    real scalar    m
+    real colvector r
+    
+    m = m0
+    r = y - _cdist_Xb(X, b0, cols(X))
+    if (__cdist_qr_b_inner(Q, y, X, w, m, n, M, yLH, b0, r)) return
+}
+
+real scalar __cdist_qr_b_inner(class mm_qr scalar Q, real colvector y,
+    real matrix X, real colvector w, real scalar m, real scalar n,
+    real scalar M, real rowvector yLH, real colvector b0, real colvector r)
+{
+    real scalar    wt, nL, nH, mL, mH
+    real rowvector qLH
+    real colvector sL, sH, p, pL, pH, qL, qH
+    real colvector yy, ww
+    real matrix    xx
+    
+    // identify the subsets of obs below and above the target window
+    wt  = rows(w)!=1
+    qLH = mm_quantile(r, w, (Q.p()-m*M/(2*n), Q.p()+m*M/(2*n)))
+    sL  = r :< qLH[1]; pL = selectindex(sL); nL = length(pL)
+    sH  = r :> qLH[2]; pH = selectindex(sH); nH = length(pH)
+    // loop until convergence
+    while (1) {
+        // full sample
+        if (nL==0 & nH==0) {
+            Q.data(y, X, w)
+            Q.b_init(b0)
+            return(1)
+        }
+        // obtain fit from data window and globs
+        p = selectindex(!sL :& !sH)
+        yy = y[p]
+        xx = X[p,]
+        ww = wt ? w[p] : J(n-nL-nH, 1, 1)
+        if (nL) {
+            yy = yy \ yLH[1]
+            xx = xx \ mean(X[pL,], wt ? w[pL] : 1)
+            ww = ww \ (wt ? quadsum(w[pL]) : nL)
+        }
+        if (nH) {
+            yy = yy \ yLH[2]
+            xx = xx \ mean(X[pH,], wt ? w[pH] : 1)
+            ww = ww \ (wt ? quadsum(w[pH]) : nH)
+        }
+        Q.data(yy, xx, ww)
+        Q.b_init(b0)
+        // diagnose solution
+        if (nL) qL = selectindex((y[pL] - _cdist_Xb(X[pL,], Q.b(), cols(X))):>0)
+        else    qL = J(0,1,.)
+        if (nH) qH = selectindex((y[pH] - _cdist_Xb(X[pH,], Q.b(), cols(X))):<0)
+        else    qH = J(0,1,.)
+        mL = length(qL); mH = length(qH)
+        // case 1: more than 0.1*M wrong signs; restart with doubled subsample
+        if ((mL+mH) > 0.1*M) {
+            m = 2 * m
+            return(0)
+        }
+        // case 2: less than 0.1*M wrong sings; edit subsample 
+        if (mL) {
+            sL[pL[qL]] = J(mL,1,0)
+            pL = select(pL, sL[pL])
+            nL = nL - mL
+        }
+        if (mH) {
+            sH[pH[qH]] = J(mH,1,0)
+            pH = select(pH, sH[pH])
+            nH = nH - mH
+        }
+        // case 2: no wrong signs; done
+        if (mL==0 & mH==0) return(1)
     }
 }
 
@@ -1483,7 +1624,7 @@ void _cdist_dr(struct CDIST scalar S, struct CDIST_G scalar G,
     if (todo[2]) {
         if (S.pooled) G.W.adj = &mm_diff(0 \ _cdist_dr_F(S.X, G.b, S.w))
         else          G.W.adj = &mm_diff(0 \ _cdist_dr_F(G1.X, G.b, G1.w))
-        G.adj = _cdist_stats(*G.Y.fit, *G.W.adj, S.s)
+        G.adj = _cdist_stats(*G.Y.adj, *G.W.adj, S.s)
     }
     _cdist_progress_done(D)
 }

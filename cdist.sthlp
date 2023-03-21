@@ -1,5 +1,5 @@
 {smcl}
-{* 18mar2023}{...}
+{* 21mar2023}{...}
 {hi:help cdist}{...}
 {right:{browse "http://github.com/benjann/cdist/"}}
 {hline}
@@ -375,6 +375,12 @@
     or {cmd:qr} to obtain counterfactual distributions based on
     series of quantile regressions.
 
+{pmore}
+    {cmd:method(qr)} uses preprocessing algorithms suggested by
+    Portnoy and Koenker (1997) and Chernozhukov (2022) to
+    speed up the computations. Should these algorithms fail, you can type
+    {cmd:method(qr0)} to use standard estimation without preprocessing.
+
 {phang}
     {opt gsize(#)} sets the size of the evaluation grid for distribution regression
     or the quantile regression process (number of models estimated in each group). The default
@@ -576,12 +582,21 @@
 {title:References}
 
 {phang}
-    Chernozhukov, Victor, Iv{c a'}n Fern{c a'}ndez-Val, Blaise Melly (2013). Inference on
+    Chernozhukov, Victor, Iv{c a'}n Fern{c a'}ndez-Val, Blaise Melly. 2013. Inference on
     Counterfactual Distributions. Econometrica 81(6):2205–2268.
     {p_end}
 {phang}
-    Juhn, Chinhui, Kevin M. Murphy, Brooks Pierce (1993). Wage Inequality and the Rise in Returns to Skill. Journal of
-    Political Economy 101(3): 410-442.
+    Chernozhukov, Victor, Iv{c a'}n Fern{c a'}ndez-Val, Blaise Melly. 2022. Fast
+    algorithms for the quantile regression process. Empirical Economics 62(1):7–33.
+    {p_end}
+{phang}
+    Juhn, Chinhui, Kevin M. Murphy, Brooks Pierce. 1993. Wage Inequality and the Rise
+    in Returns to Skill. Journal of Political Economy 101(3):410-442.
+    {p_end}
+{phang}
+    Portnoy, Stephen,  Roger  Koenker. 1997. The Gaussian hare and the Laplacian
+    tortoise: computability of squared-error versus absolute-error
+    estimators. Statistical Science 12(4):279-300.
     {p_end}
 
 
@@ -602,4 +617,5 @@
 
 {psee}
     Online:  help for
-    {helpb logit}, {helpb qreg}, {helpb counterfactual} (if installed), {helpb oaxaca} (if installed), {helpb moremata} (if installed)
+    {helpb logit}, {helpb qreg}, {helpb counterfactual} (if installed),
+    {helpb oaxaca} (if installed), {helpb moremata} (if installed)
