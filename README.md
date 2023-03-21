@@ -1,10 +1,11 @@
 # cdist
-Stata module for counterfactual distribution estimation
+Stata module for counterfactual distribution estimation and decomposition of group differences
 
 `cdist` estimates counterfactual distributions using methods suggested
-by Chernozhukov et al. (2013). The unconditional (counterfactual) distributions
-are either obtained by distribution regression using logit models
-or by a linear quantile regression process.
+by [Chernozhukov et al. (2013)](https://doi.org/10.3982/ECTA10582). The unconditional
+(counterfactual) distributions are either obtained by distribution regression using logit models
+or by a linear quantile regression process. Optionally, counterfactual decompositions
+of group differences can be obtained.
 
 To install `cdist` from GitHub, type
 

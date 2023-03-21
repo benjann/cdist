@@ -1,5 +1,5 @@
 v 3
-d cdist: Stata module for counterfactual distribution estimation
+d cdist: Stata module for counterfactual distribution estimation and decomposition of group differences
 d 
 d Author: Ben Jann, University of Bern, ben.jann@unibe.ch
 d

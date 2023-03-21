@@ -1,2 +1,2 @@
 v 3
-p cdist Stata module for counterfactual distribution estimation
+p cdist Stata module for counterfactual distribution estimation and decomposition of group differences

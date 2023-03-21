@@ -6,7 +6,7 @@
 
 {title:Title}
 
-{pstd}{hi:cdist} {hline 2} Counterfactual distribution estimation
+{pstd}{hi:cdist} {hline 2} Counterfactual distribution estimation and decomposition of group differences
 
 
 {title:Syntax}
@@ -609,7 +609,8 @@
     Thanks for citing this software as follows:
 
 {pmore}
-    Jann, B. (2023). cdist: Stata module for counterfactual distribution estimation. Available from
+    Jann, B. (2023). cdist: Stata module for counterfactual distribution estimation
+    and decomposition of group differences. Available from
     {browse "http://github.com/benjann/cdist/"}.
 
 
