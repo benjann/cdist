@@ -1,5 +1,5 @@
 {smcl}
-{* 21mar2023}{...}
+{* 22mar2023}{...}
 {hi:help cdist}{...}
 {right:{browse "http://github.com/benjann/cdist/"}}
 {hline}
@@ -141,9 +141,9 @@
     {p_end}
 {synopt :{opt g:size(#)}}size of evaluation grid (number of models)
     {p_end}
-{synopt :{opt noint:egrate}}do not integrate predictions; only relevant if {cmd:method(qr)}
+{synopt :{opt nobin}}do not apply linear binning; only relevant if {cmd:method(qr)}
     {p_end}
-{synopt :{opt int:egrate(# [#])}}details of integration; only relevant if {cmd:method(qr)}
+{synopt :{opt bin(# [#])}}details of linear binning; only relevant if {cmd:method(qr)}
     {p_end}
 {synopt :{opt nodot:s}}suppress progress dots
     {p_end}
@@ -392,13 +392,13 @@
     may be smaller than {cmd:gsize()} depending on the data.
 
 {phang}
-    {opt nointegrate} requests that the target statistics are computed from the
-    raw predictions rather than the distribution function of the
-    predictions. This is only relevant if {cmd:method(qr)} has been specified.
+    {opt nobin} requests that the target statistics are computed from the
+    raw predictions rather than from linearly binned predictions. This
+    is only relevant if {cmd:method(qr)} has been specified.
 
 {phang}
-    {opt integrate(# [#])} set the size (number of points) and padding percentage of the approximation grid
-    used to compute the distribution function of predictions. The padding percentage
+    {opt bin(# [#])} sets the size (number of points) and padding percentage of the
+    approximation grid used for linear binning of predictions. The padding percentage
     determines how much the approximation grid extends beyond the observed minimum and maximum
     of {it:depvar}. The default is {cmd:integrate(1000 5)} (1000 evaluation points;
     5 percent padding on each side). This is
@@ -514,8 +514,8 @@
 {synopt:{cmd:e(pdf_adaptive)}}number of iterations of adaptive density estimator (if relevant){p_end}
 {synopt:{cmd:e(pdf_ll)}}lower boundary of support for density estimation (if relevant){p_end}
 {synopt:{cmd:e(pdf_ul)}}upper boundary of support for density estimation (if relevant){p_end}
-{synopt:{cmd:e(integrate)}}number of integration points (if relevant){p_end}
-{synopt:{cmd:e(integ_pad)}}integration padding percentage (if relevant){p_end}
+{synopt:{cmd:e(bin)}}size of binning grid (if relevant){p_end}
+{synopt:{cmd:e(bin_pad)}}padding percentage of binning grid (if relevant){p_end}
 {synopt:{cmd:e(k)}}number of coefficients per equation in {cmd:e(b)}{p_end}
 {synopt:{cmd:e(k_eq)}}number of equations in {cmd:e(b)}{p_end}
 

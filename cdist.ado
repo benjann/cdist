@@ -151,7 +151,7 @@ program Estimate, eclass
         */ qdef(numlist max=1 int >=0 <=11) /*
         */ lincom(str) DECOmp DECOmp2(str) keep(str) drop(str) /*
         */ Method(str) Gsize(int 100) /*
-        */ noINTegrate INTegrate2(numlist max=2 >=0) /*
+        */ nobin BIN2(numlist max=2 >=0) /*
         */ noDOTs noHEADer noLEGend noTABle /*
         */ GENerate GENerate2(str) replace * ]
     if "`qdef'"=="" local qdef 2
@@ -216,9 +216,9 @@ program Estimate, eclass
             exit 198
         }
     }
-    _parse_integrate `integrate2'
-    if "`integrate'"!=""                   local integrate2 ""
-    else if !inlist("`method'","qr","qr0") local integrate2 ""
+    _parse_bin `bin2'
+    if "`bin'"!=""                         local bin2 ""
+    else if !inlist("`method'","qr","qr0") local bin2 ""
     
     // keep()/drop()/decomp()/lincom()
     local eqs "obs0 fit0 adj0"
@@ -368,9 +368,9 @@ program Estimate, eclass
     eret scalar gsize        = `gsize'
     eret scalar gsize0       = `gsize0'
     eret scalar gsize1       = `gsize1'
-    if "`integrate2'"!="" {
-        eret scalar integrate = `integrate2'
-        eret scalar integ_pad = `integ_pad'
+    if "`bin2'"!="" {
+        eret scalar bin     = `bin2'
+        eret scalar bin_pad = `bin_pad'
     }
     eret scalar k            = `k'
     eret scalar k_eq         = `: list sizeof eqs'
@@ -594,17 +594,17 @@ program _parse_jmp
     c_local jmp `jmp'
 end
 
-program _parse_integrate
+program _parse_bin
     args n pad
     if "`n'"==""   local n   1000
     if "`pad'"=="" local pad 5
     capt n numlist "`n'", integer range(>0)
     if _rc {
-        di as err "error in integrate()"
+        di as err "error in bin()"
         exit _rc
     }
-    c_local integrate2 `n'
-    c_local integ_pad  `pad'
+    c_local bin2 `n'
+    c_local bin_pad  `pad'
 end
 
 program _parse_generate
@@ -971,8 +971,8 @@ struct CDIST {
                            xvars,   // varnames of covariates
                            wvar     // varname of weights
     real scalar            g,       // target size of approximation grid
-                           int_n,   // number of integration points (qr)
-                           int_p,   // padding proportion of integration grid
+                           bin_n,   // size of binning grid (qr)
+                           bin_p,   // padding proportion of binning grid
                            pooled,  // used pooled X distribution
                            dots     // display progress dots
     string rowvector       eqs      // equations to be included in results
@@ -1066,8 +1066,8 @@ void cdist()
     S.jmp    = st_local("jmp")
     S.pooled = st_local("pooled")!=""
     S.g      = strtoreal(st_local("gsize"))
-    S.int_n  = strtoreal(st_local("integrate2"))
-    S.int_p  = strtoreal(st_local("integ_pad"))/100
+    S.bin_n  = strtoreal(st_local("bin2"))
+    S.bin_p  = strtoreal(st_local("bin_pad"))/100
     S.eqs = tokens(st_local("eqs"))
     S.touse = st_local("touse")
     S.xvars = st_local("XVARS")
@@ -1382,11 +1382,11 @@ void _cdist_qr(struct CDIST scalar S, struct CDIST_G scalar G,
     else                 _cdist_qr_b(G, D)
     _cdist_progress_done(D)
     _cdist_progress_init(D, 0, "enumerating predictions ...")
-    // setup integration grid (with 5% padding on each side)
-    if (S.int_n<.) {
+    // setup binning grid (with 5% padding on each side)
+    if (S.bin_n<.) {
         G.Y.fit = G.Y.adj = G.Y.loc =
-            &rangen(_ymin(S) - _yrange(S)*S.int_p,
-                    _ymax(S) + _yrange(S)*S.int_p, S.int_n)
+            &rangen(_ymin(S) - _yrange(S)*S.bin_p,
+                    _ymax(S) + _yrange(S)*S.bin_p, S.bin_n)
     }
     // obtain fit
     if (todo[1]) {
@@ -1407,17 +1407,16 @@ void _cdist_qr(struct CDIST scalar S, struct CDIST_G scalar G,
     _cdist_progress_done(D)
 }
 
-// generate predictions from quantile regressions (and possibly integrate)
+// generate predictions from quantile regressions (possibly binned)
 
 void _cdist_qr_p(pointer scalar Y, pointer scalar W, real matrix X,
     real matrix B, real colvector w)
 {
     real scalar    i, k, g, n
-    real colvector F, p
     
     k = cols(X)
     g = cols(B)
-    // Variant 1: nointegrate
+    // Variant 1: no binning
     if (Y==NULL) {
         n = rows(X)
         Y = &J(n*g, 1, .)
@@ -1425,29 +1424,12 @@ void _cdist_qr_p(pointer scalar Y, pointer scalar W, real matrix X,
         W = &(rows(w)==1 ? w/g : J(g, 1, w/g))
         return
     }
-    // Variant 2: integrate
-    n = rows(*Y)
-    W = &J(n, 1, 0)
-    if (rows(w)==1) {
-        for (i=1;i<=g;i++) {
-            F = _mm_relrank(sort(_cdist_Xb(X, B[,i], k),1), w, *Y, 0, 1)
-            *W = quadrowsum((*W, mm_diff(0 \ F)))
-        }
-        // some mass will be missing if there are predictions larger than
-        // max(Y); add the missing mass to the top
-        (*W)[n] = (*W)[n] + max(((w:*rows(X) - quadsum(*W)),0))
+    // Variant 2: binning
+    W = &J(rows(*Y), 1, 0)
+    for (i=1;i<=g;i++) {
+        *W = quadrowsum((*W, mm_linbin(_cdist_Xb(X, B[,i], k), w, *Y)))
     }
-    else {
-        for (i=1;i<=g;i++) {
-            F = _cdist_Xb(X, B[,i], k)
-            p = order(F,1)
-            F = _mm_relrank(F[p], w[p], *Y, 0, 1)
-            *W = quadrowsum((*W, mm_diff(0 \ F)))
-        }
-        // some mass will be missing if there are predictions larger than
-        // max(Y); add the missing mass to the top
-        (*W)[n] = (*W)[n] + max(((quadsum(w) - quadsum(*W)),0))
-    }
+    *W = *W / g
 }
 
 // obtain quantile regressions

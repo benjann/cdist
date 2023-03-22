@@ -20,6 +20,10 @@ Stata 14 (or newer) and [`moremata`](https://github.com/benjann/moremata)
 
 Main changes:
 
+    22mar2023  (version 1.0.6)
+    - now using linear binning rather than integration to aggregate predictions
+      from quantile regressions; option -integrate()- now called -bin()-
+
     21mar2023  (version 1.0.5)
     - option -swap- added to -dstat decomp-
     - option jmp: now using preprocessing algorithm also for median regression
