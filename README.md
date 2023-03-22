@@ -18,7 +18,12 @@ Stata 14 (or newer) and [`moremata`](https://github.com/benjann/moremata)
 
 ---
 
-Example (use of the `grytsle` package is made; type `ssc install grstyle` to install the package)
+Example (use of [`grstyle`](https://github.com/benjann/grstyle) and 
+[`coefplot`](https://github.com/benjann/coefplot) is made; type `ssc install grstyle` and 
+`ssc install coefplot` to install these packages; `grstyle` also requires 
+[`palettes`](https://github.com/benjann/palettes)
+and [`colrspace`](https://github.com/benjann/colrspace), type 
+`ssc install palettes` and `ssc install colrspace`).
 
 Data and setup.
 
@@ -33,7 +38,7 @@ Data and setup.
 
 Adjusting the wage distribution of non-unionized and unionized workers to a 
 common distribution of characteristics using distribution regression; the
-graph then shows the difference in the unadjusted and adjusted density curves.
+graph shows the difference in the unadjusted and adjusted density curves.
 
     cdist lnwage grade tenure c.ttl_exp##c.ttl_exp i.south i.smsa, ///
         by(union) pooled decomp pdf(#99)
