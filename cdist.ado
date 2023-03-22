@@ -1,4 +1,4 @@
-*! version 1.0.5  21mar2023  Ben Jann
+*! version 1.0.6  22mar2023  Ben Jann
 
 capt mata: assert(mm_version()>=201)
 if _rc {
@@ -1329,8 +1329,11 @@ void _cdist_clipmin(real colvector x, real scalar min)
 {
     real colvector p
     
-    p = selectindex(x:<min)
-    if (length(p)) x[p] = J(length(p), 1, min)
+    p = x:<min
+    if (any(p)) {
+        p = selectindex(p)
+        x[p] = J(length(p), 1, min)
+    }
 }
 
 // median regression, optionally using preprocessing algorithm 
@@ -1428,24 +1431,22 @@ void _cdist_qr_p(pointer scalar Y, pointer scalar W, real matrix X,
     if (rows(w)==1) {
         for (i=1;i<=g;i++) {
             F = _mm_relrank(sort(_cdist_Xb(X, B[,i], k),1), w, *Y, 0, 1)
-            *W = *W + (mm_diff(0 \ F) :- *W) / i // mean updating
+            *W = quadrowsum((*W, mm_diff(0 \ F)))
         }
         // some mass will be missing if there are predictions larger than
         // max(Y); add the missing mass to the top
-        (*W)[n] = (*W)[n] + (w:*rows(X) - quadsum(*W))
-        // limited computer precision may lead to negative weights; fix this
-        _cdist_clipmin(*W, 0)
+        (*W)[n] = (*W)[n] + max(((w:*rows(X) - quadsum(*W)),0))
     }
     else {
         for (i=1;i<=g;i++) {
             F = _cdist_Xb(X, B[,i], k)
             p = order(F,1)
             F = _mm_relrank(F[p], w[p], *Y, 0, 1)
-            *W = *W + (mm_diff(0 \ F) :- *W) / i // mean updating
+            *W = quadrowsum((*W, mm_diff(0 \ F)))
         }
-        (*W)[n] = (*W)[n] + (quadsum(w) - quadsum(*W))
-        // limited computer precision may lead to negative weights; fix this
-        _cdist_clipmin(*W, 0)
+        // some mass will be missing if there are predictions larger than
+        // max(Y); add the missing mass to the top
+        (*W)[n] = (*W)[n] + max(((quadsum(w) - quadsum(*W)),0))
     }
 }
 
