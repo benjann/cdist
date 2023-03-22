@@ -1,4 +1,4 @@
-*! version 1.0.6  22mar2023  Ben Jann
+*! version 1.0.7  22mar2023  Ben Jann
 
 capt mata: assert(mm_version()>=201)
 if _rc {
@@ -1712,9 +1712,11 @@ real colvector _cdist_dr_logit_collect_b(string rowvector X)
     x = st_matrixcolstripe("e(b)")[,2]'
     B = J(j, 1, 0)
     for (;j;j--) {
-        if (X[j]==x[i]) {
-            B[j] = b[i]
-            i--
+        if (i) {
+            if (X[j]==x[i]) {
+                B[j] = b[i]
+                i--
+            }
         }
     }
     return(B)

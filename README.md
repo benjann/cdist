@@ -18,7 +18,49 @@ Stata 14 (or newer) and [`moremata`](https://github.com/benjann/moremata)
 
 ---
 
+Example (use of the `grytsle` package is made; type `ssc install grstyle` to install the package)
+
+Data and setup.
+
+    clear all
+    sysuse nlsw88
+    gen double lnwage = log(wage)
+    grstyle init
+    grstyle set imesh
+    grstyle set color sb
+    grstyle set linewidth medthick
+    grstyle set legend 2, inside nobox
+
+Adjusting the wage distribution of non-unionized and unionized workers to a 
+common distribution of characteristics using distribution regression; the
+graph then shows the difference in the unadjusted and adjusted density curves.
+
+    cdist lnwage grade tenure c.ttl_exp##c.ttl_exp i.south i.smsa, ///
+        by(union) pooled decomp pdf(#99)
+    coefplot (., keep(Delta:)) (., keep(Coefs:)), noci at(_coef) recast(line) ///
+        ylabel(-.4(.1).4) yline(0) ytitle("Density") xtitle("ln(wage)") ///
+        plotlabels("Overall difference" "Composition adjusted difference")
+
+![example 1](/images/1.png)
+
+Same analysis using a quantile regression process instead of distribution
+regression. 
+
+    cdist lnwage grade tenure c.ttl_exp##c.ttl_exp i.south i.smsa, method(qr) ///
+        by(union) pooled decomp pdf(#99)
+    coefplot (., keep(Delta:)) (., keep(Coefs:)), noci at(_coef) recast(line) ///
+        ylabel(-.4(.1).4) yline(0) ytitle("Density") xtitle("ln(wage)") ///
+        plotlabels("Overall difference" "Composition adjusted difference")
+
+![example 2](/images/2.png)
+
+---
+
 Main changes:
+
+    22mar2023 (version 1.0.7)
+    - collection of coefficients from logit failed if logit dropped the 1st variable
+      due collinearity; this is fixed
 
     22mar2023  (version 1.0.6)
     - now using linear binning rather than integration to aggregate predictions

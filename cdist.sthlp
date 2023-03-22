@@ -480,7 +480,7 @@
 
         . {stata sysuse nlsw88, clear}
         . {stata generate lnwage = ln(wage)}
-        . {stata cdist lnwage tenure ttl_exp grade, by(union) statistics(mean variance iqr(10 90))}
+{p 8 12 2}. {stata cdist lnwage tenure ttl_exp grade, by(union) statistics(mean variance iqr(10 90))}{p_end}
         . {stata cdist decomp}
         . {stata cdist decomp, reverse}
         . {stata cdist decomp, average}
@@ -488,7 +488,7 @@
 {pstd}
     JMP type decomposition using quantile regressions:
 
-        . {stata cdist lnwage tenure ttl_exp grade, by(union) method(qr) jmp statistics(mean variance iqr(10 90))}
+{p 8 12 2}. {stata cdist lnwage tenure ttl_exp grade, by(union) method(qr) jmp statistics(mean variance iqr(10 90))}{p_end}
         . {stata cdist decomp}
         . {stata cdist decomp, reverse}
         . {stata cdist decomp, average}
