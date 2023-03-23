@@ -63,6 +63,10 @@ regression.
 
 Main changes:
 
+    22mar2023 (version 1.0.8)
+    - option -logfit- added
+    - option -islog- added
+
     22mar2023 (version 1.0.7)
     - collection of coefficients from logit failed if logit dropped the 1st variable
       due collinearity; this is fixed

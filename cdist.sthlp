@@ -1,5 +1,5 @@
 {smcl}
-{* 22mar2023}{...}
+{* 23mar2023}{...}
 {hi:help cdist}{...}
 {right:{browse "http://github.com/benjann/cdist/"}}
 {hline}
@@ -108,6 +108,8 @@
 {syntab :Target statistics}
 {synopt :{cmdab:s:tatistics(}{help cdist##stats:stats}{cmd:)}}statistics to be calculated
     {p_end}
+{synopt :{cmd:islog}}use exp({it:depvar}) to compute inequality statistics
+    {p_end}
 {synopt :{opt p:ercentile}[{cmd:(}{help cdist##percentile:{it:spec}}{cmd:)}]}calculate
     percentiles; alternative to {cmd:statistics()}
     {p_end}
@@ -138,6 +140,8 @@
 {synopt :{cmdab:m:ethod(}{it:{help cdist##method:method}}{cmd:)}}estimation
     method; can be {cmdab:l:ogit} (distribution regression)
     or {cmd:qr} (quantile regression process)
+    {p_end}
+{synopt :{opt log:fit}}use log-transformed outcome variable for model estimation
     {p_end}
 {synopt :{opt g:size(#)}}size of evaluation grid (number of models)
     {p_end}
@@ -275,6 +279,11 @@
     Only one of {cmd:statistics()}, {opt percentile()}, {opt quantile()}, {opt pdf()}, and {opt cdf()}
     is allowed. The default is {cmd:statistics(mean)}.
 
+{phang}
+    {cmd:islog} indicates that {it:depvar} contains log-transformed values and
+    that the computation of inequality measures {cmd:gini}, {cmd:mld},
+    {cmd:theil}, and {cmd:cv} should be based on back-transformed values.
+
 {marker percentile}{...}
 {phang}
     {opt percentile}[{cmd:(#}{it:#}|{it:numlist}{cmd:)}] reports quantiles (percentiles), either
@@ -384,6 +393,13 @@
     Portnoy and Koenker (1997) and Chernozhukov (2022) to
     speed up the computations. Should these algorithms fail, you can type
     {cmd:method(qr0)} to use standard estimation without preprocessing.
+
+{phang}
+    {opt logfit} performs model fitting based on log-transformed outcome values
+    and then back-transforms the resulting distributions to the original scale. This
+    may be useful when using {cmd:method(qr)}; results
+    from {cmd:method(logit)} are insensitive to whether {opt logfit}
+    is specified or not (apart from roundoff error).
 
 {phang}
     {opt gsize(#)} sets the size of the evaluation grid for distribution regression
@@ -529,10 +545,14 @@
 {synopt:{cmd:e(pooled)}}{cmd:pooled} or empty{p_end}
 {synopt:{cmd:e(jmp)}}{cmd:median}, {cmd:mean}, or empty{p_end}
 {synopt:{cmd:e(statistics)}}specification from {cmd:statistics()}{p_end}
+{synopt:{cmd:e(islog)}}{cmd:islog} or empty{p_end}
+{synopt:{cmd:e(stats_nolog)}}statistics affected by {cmd:islog}{p_end}
 {synopt:{cmd:e(coeftype)}}{cmd:quantile}, {cmd:percentile}, {cmd:pdf}, {cmd:cdf}, or empty{p_end}
 {synopt:{cmd:e(pdf_kernel)}}kernel used for density estimation (if relevant){p_end}
 {synopt:{cmd:e(pdf_bwmethod)}}bandwidth selector used for density estimation (if relevant){p_end}
 {synopt:{cmd:e(pdf_boundary)}}boundary correction method used for density estimation (if relevant){p_end}
+{synopt:{cmd:e(method)}}{cmd:logit} or {cmd:qr}{p_end}
+{synopt:{cmd:e(logfit)}}{cmd:logfit} or empty{p_end}
 {synopt:{cmd:e(eqnames)}}names of equations in {cmd:e(b)}{p_end}
 {synopt:{cmd:e(generate)}}names of generated variables{p_end}
 {synopt:{cmd:e(wtype)}}weight type{p_end}
@@ -618,7 +638,7 @@
 {pmore}
     Jann, B. (2023). cdist: Stata module for counterfactual distribution estimation
     and decomposition of group differences. Available from
-    {browse "http://github.com/benjann/cdist/"}.
+    {browse "https://ideas.repec.org/c/boc/bocode/s459187.html"}.
 
 
 {title:Also see}

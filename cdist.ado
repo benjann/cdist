@@ -1,4 +1,4 @@
-*! version 1.0.7  22mar2023  Ben Jann
+*! version 1.0.8  23mar2023  Ben Jann
 
 capt mata: assert(mm_version()>=201)
 if _rc {
@@ -117,6 +117,9 @@ program Display, rclass
         }
         else local xvars "(none)"
         di as txt "covariates: " as res `"`xvars'"'
+        if `"`e(stats_nolog)'"'!="" {
+            di as txt "(" as res `"`e(stats_nolog)'"' as txt " based on antilog)"
+        }
     }
 end
 
@@ -146,14 +149,18 @@ program Estimate, eclass
     // syntax
     syntax varlist(fv) [if] [in] [pw iw fw], by(varname) [ swap /*
         */ POOled jmp JMP2(str) /*
-        */ Statistics(str) pdf PDF2(str) cdf CDF2(str) /*
+        */ Statistics(str) islog pdf PDF2(str) cdf CDF2(str) /*
         */ Percentile Percentile2(str) Quantile Quantile2(str) /*
         */ qdef(numlist max=1 int >=0 <=11) /*
         */ lincom(str) DECOmp DECOmp2(str) keep(str) drop(str) /*
-        */ Method(str) Gsize(int 100) /*
+        */ Method(str) LOGfit Gsize(int 100) /*
         */ nobin BIN2(numlist max=2 >=0) /*
         */ noDOTs noHEADer noLEGend noTABle /*
         */ GENerate GENerate2(str) replace * ]
+    if "`islog'"!="" & "`logfit'"!="" {
+        di as err "{bf:logfit} and {bf:islog} not both allowed"
+        exit 198
+    }
     if "`qdef'"=="" local qdef 2
     _get_diopts diopts, `options'
     c_local diopts `header' `legend' `table' `diopts'
@@ -351,12 +358,15 @@ program Estimate, eclass
     eret local title         "Counterfactual distribution estimation"
     eret local cmd           "cdist"
     eret local method        "`method'"
+    eret local logfit        "`logfit'"
     eret local indepvars     "`xvars'"
     eret local by            "`by'"
     eret local eqnames       "`eqs'"
     eret local pooled        "`pooled'"
     eret local jmp           "`jmp'"
     eret local statistics    "`statistics'"
+    eret local islog         "`islog'"
+    eret local stats_nolog   "`stats_nolog'"
     if "`percentile'`quantile'`pdf'`cdf'"!="" {
         eret local coeftype  "`percentile'`quantile'`pdf'`cdf'"
         eret matrix at       = `AT'
@@ -971,6 +981,7 @@ struct CDIST {
                            xvars,   // varnames of covariates
                            wvar     // varname of weights
     real scalar            g,       // target size of approximation grid
+                           logfit,  // use log scale for estimation
                            bin_n,   // size of binning grid (qr)
                            bin_p,   // padding proportion of binning grid
                            pooled,  // used pooled X distribution
@@ -990,10 +1001,12 @@ struct CDIST_S {
     string scalar          typ      // type of target statistics
     real scalar            k        // number of statistics
     string colvector       s        // statistics (if typ==s)
-    real colvector         at       // evaluation points
-    real scalar            qdef     // quantile definition
+    real colvector         at,      // evaluation points
+                           nolog    // statistics using exp(depvar)
     class mm_density scalar D       // density estimation object
-    real scalar            pw,      // weights are pweights
+    real scalar            qdef,    // quantile definition
+                           islog,   // use exp(depvar) for inequality measures
+                           pw,      // weights are pweights
                            bw       // bandwidth for pdf
 }
 
@@ -1004,7 +1017,8 @@ struct CDIST_G {
     real scalar            g        // size of approximation grid
     real colvector         y,       // depvar
                            w,       // weights
-                           p        // evaluation grid (probabilities)
+                           p,       // evaluation grid (probabilities)
+                           at       // evaluation grid (levels)
     real matrix            X        // covariates
     real matrix            b        // regression coefficients
     real colvector         bl       // coefficients of location regression
@@ -1063,6 +1077,7 @@ void cdist()
     // setup S
     S.dots   = st_local("dots")==""
     S.method = st_local("method")
+    S.logfit = st_local("logfit")!=""
     S.jmp    = st_local("jmp")
     S.pooled = st_local("pooled")!=""
     S.g      = strtoreal(st_local("gsize"))
@@ -1098,13 +1113,27 @@ void cdist()
         if (S.pooled) S.w = 1
     }
     // target stats
-    S.s.qdef = strtoreal(st_local("qdef"))
-    S.s.pw   = st_local("weight")=="pweight"
+    S.s.islog = st_local("islog")!=""
+    S.s.qdef  = strtoreal(st_local("qdef"))
+    S.s.pw    = st_local("weight")=="pweight"
     s = _cdist_stats_setup(S)
     if (length(s)==0) {
         S.s.typ = "s"
         S.s.s   = s = tokens(st_local("statistics"))'
         S.s.k   = length(s)
+        if (S.s.islog) S.s.nolog = J(S.s.k, 1, 0)
+    }
+    // method
+    if (S.method=="logit") f = &_cdist_dr()  // distribution regression
+    else                   f = &_cdist_qr()  // quantile regression
+    // obs0/obs1
+    if (anyof(S.eqs,"obs0")) G0.obs = _cdist_stats(G0.y, G0.w, S.s,)
+    if (anyof(S.eqs,"obs1")) G1.obs = _cdist_stats(G1.y, G1.w, S.s)
+    // transform data in case of logfit
+    if (S.logfit) {
+        G0.y = ln(G0.y)
+        G1.y = ln(G1.y)
+        S.yminmax = J(1,0,.)
     }
     // loc0/loc1: need to obtain median fits
     if (anyof(S.eqs,"loc0") | anyof(S.eqs,"loc1")) {
@@ -1118,11 +1147,7 @@ void cdist()
         }
     }
     // compute results
-    if (S.method=="logit") f = &_cdist_dr()  // distribution regression
-    else                   f = &_cdist_qr()  // quantile regression
-    if (anyof(S.eqs,"obs0")) G0.obs = _cdist_stats(G0.y, G0.w, S.s,)
     (*f)(S, G0, G1, "0")
-    if (anyof(S.eqs,"obs1")) G1.obs = _cdist_stats(G1.y, G1.w, S.s)
     (*f)(S, G1, G0, "1")
     // return results
     j = length(S.eqs)
@@ -1150,6 +1175,11 @@ void cdist()
     _cdist_store_coefs(S, G0, "0")
     _cdist_store_coefs(S, G1, "1")
     if (S.s.typ=="pdf") st_numscalar(st_local("BW"), S.s.bw)
+    // list of statistics that have been based on exp(depvar)
+    if (S.s.islog) {
+        if (any(S.s.nolog))
+            st_local("stats_nolog", invtokens(select(S.s.s, S.s.nolog)'))
+    }
     // store distribution functions in data (if requested)
     _cdist_store(S, G0, G1, tokens(st_local("tmpgen")))
 }
@@ -1305,7 +1335,7 @@ void _cdist_store_coefs(struct CDIST scalar S, struct CDIST_G scalar G,
         }
         nm = st_tempname()
         st_local("AT"+g, nm)
-        if (S.method=="logit") st_matrix(nm, (*G.Y.fit)[|1\G.g|])
+        if (S.method=="logit") st_matrix(nm, (G.at)[|1\G.g|])
         else                   st_matrix(nm, G.p)
     }
     if (length(G.bl)) {
@@ -1391,17 +1421,20 @@ void _cdist_qr(struct CDIST scalar S, struct CDIST_G scalar G,
     // obtain fit
     if (todo[1]) {
         _cdist_qr_p(G.Y.fit, G.W.fit, G.X, G.b, G.w)
+        if (S.logfit) G.Y.fit = &exp(*G.Y.fit)
         G.fit = _cdist_stats(*G.Y.fit, *G.W.fit, S.s)
     }
     // obtain adj
     if (todo[2]) {
         if (S.pooled) _cdist_qr_p(G.Y.adj, G.W.adj, S.X, G.b, S.w)
         else          _cdist_qr_p(G.Y.adj, G.W.adj, G1.X, G.b, G1.w)
+        if (S.logfit) G.Y.adj = &exp(*G.Y.adj)
         G.adj = _cdist_stats(*G.Y.adj, *G.W.adj, S.s)
     }
     // obtain loc
     if (todo[3]) {
         _cdist_qr_p(G.Y.loc, G.W.loc, G1.X, (G.b:-(G.bl-G1.bl)), G1.w)
+        if (S.logfit) G.Y.loc = &exp(*G.Y.loc)
         G.loc = _cdist_stats(*G.Y.loc, *G.W.loc, S.s)
     }
     _cdist_progress_done(D)
@@ -1629,13 +1662,13 @@ void _cdist_dr(struct CDIST scalar S, struct CDIST_G scalar G,
     todo = anyof(S.eqs,"fit"+g), anyof(S.eqs,"adj"+g), anyof(S.eqs,"loc"+g)
     if (!any(todo)) return
     // determine evaluation points
-    if (mm_nunique(G.y)<=S.g) *G.Y.fit = mm_unique(G.y) // use observed values
+    if (mm_nunique(G.y)<=S.g) G.at = mm_unique(G.y) // use observed values
     else {
         G.p = (1::S.g)/S.g:-.5/S.g
-        G.Y.fit = &mm_unique(mm_quantile(G.y, G.w, G.p \ 1, 1/*low quantile*/))
+        G.at = mm_unique(mm_quantile(G.y, G.w, G.p \ 1, 1/*low quantile*/))
     }
-    G.g = rows(*G.Y.fit) - 1 // last element is maximum
-    G.Y.adj = G.Y.fit
+    G.g = rows(G.at) - 1 // last element is maximum
+    G.Y.fit = G.Y.adj = &G.at
     // estimate coefficients
     D.dots = S.dots
     _cdist_progress_init(D, G.g, "group "+g+": fitting models")
@@ -1647,12 +1680,14 @@ void _cdist_dr(struct CDIST scalar S, struct CDIST_G scalar G,
     _cdist_progress_init(D, 0, "enumerating predictions ...")
     if (todo[1]) {
         G.W.fit = &mm_diff(0 \ _cdist_dr_F(G.X, G.b, G.w))
+        if (S.logfit) G.Y.fit = &exp(*G.Y.fit)
         G.fit = _cdist_stats(*G.Y.fit, *G.W.fit, S.s)
     }
     // obtain adj
     if (todo[2]) {
         if (S.pooled) G.W.adj = &mm_diff(0 \ _cdist_dr_F(S.X, G.b, S.w))
         else          G.W.adj = &mm_diff(0 \ _cdist_dr_F(G1.X, G.b, G1.w))
+        if (S.logfit) G.Y.adj = &exp(*G.Y.adj)
         G.adj = _cdist_stats(*G.Y.adj, *G.W.adj, S.s)
     }
     _cdist_progress_done(D)
@@ -1705,19 +1740,24 @@ real colvector _cdist_dr_logit_collect_b(string rowvector X)
     real colvector   B, b
     
     b = st_matrix("e(b)")'
-    i = rows(b)
-    j = cols(X)
-    if (i==j) return(b)
-    // some vars have been dropped; need to match names
     x = st_matrixcolstripe("e(b)")[,2]'
+    if (x==X) return(b)
+    // some vars have been dropped; need to match names
+    j = cols(X)
+    i = cols(x)
     B = J(j, 1, 0)
     for (;j;j--) {
-        if (i) {
-            if (X[j]==x[i]) {
-                B[j] = b[i]
-                i--
-            }
+        if (!i) break
+        if (X[j]==x[i]) {
+            B[j] = b[i]
+            i--
         }
+    }
+    if (i) {
+        // this should never happen
+        errprintf("inconsistent returns from {bf:logit};" +
+            " could not match all coefficients\n")
+        exit(error(498))
     }
     return(B)
 }
@@ -1746,23 +1786,50 @@ real colvector _cdist_stats(real colvector y, real colvector w,
         else if (si=="sd")       b[i] = sqrt(mm_variance0(y, w))
         else if (si=="median")   b[i] = mm_median(y, w, s.qdef)
         else if (si=="iqr")      b[i] = mm_iqrange(y, w, s.qdef)
-        else if (si=="gini")     b[i] = mm_gini(y, w)
+        else if (si=="gini") {
+            if (s.islog) {
+                s.nolog[i] = 1
+                b[i] = mm_gini(exp(y), w)
+            }
+            else b[i] = mm_gini(y, w)
+        }
         else if (si=="cv") {
-            tmp = mean(y, w)
+            if (s.islog) {
+                s.nolog[i] = 1
+                tmp = mean(exp(y), w)
+                b[i] = sqrt(mm_variance0(exp(y), w)) / tmp
+            }
+            else {
+                tmp = mean(y, w)
+                b[i] = sqrt(mm_variance0(y, w)) / tmp
+            }
             if (tmp==0) {
                 errprintf("statistic %s not allowed with outcome" +
                     " mean equal to zero\n", si)
                 exit(3498)
             }
-            b[i] = sqrt(mm_variance0(y, w)) / tmp
         }
         else if (si=="mld") {
-            _cdist_stats_check_ypos(y, "mld")
-            b[i] = ln(mean(y, w)) - mean(ln(y), w)
+            if (s.islog) {
+                s.nolog[i] = 1
+                b[i] = ln(mean(exp(y), w)) - mean(y, w)
+            }
+            else {
+                _cdist_stats_check_ypos(y, "mld")
+                b[i] = ln(mean(y, w)) - mean(ln(y), w)
+            }
         }
         else if (si=="theil") {
-            tmp = mean(y, w) 
-            b[i] = mean(y:*ln(y), w)/tmp - ln(tmp)
+            if (s.islog) {
+                s.nolog[i] = 1
+                tmp = mean(exp(y), w) 
+                b[i] = mean(exp(y):*y, w)/tmp - ln(tmp)
+            }
+            else {
+                _cdist_stats_check_ypos(y, "theil")
+                tmp = mean(y, w) 
+                b[i] = mean(y:*ln(y), w)/tmp - ln(tmp)
+            }
         }
         else if (si=="vlog") {
             _cdist_stats_check_ypos(y, "vlog")
