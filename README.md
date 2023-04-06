@@ -63,6 +63,10 @@ regression.
 
 Main changes:
 
+    06apr2023 (version 1.0.9)
+    - revised procedure for the logit models in distribution regression; perfect
+      predictors are now excluded during model estimation (if possible)
+
     22mar2023 (version 1.0.8)
     - option -logfit- added
     - option -islog- added

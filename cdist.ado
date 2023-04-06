@@ -1,4 +1,4 @@
-*! version 1.0.8  23mar2023  Ben Jann
+*! version 1.0.9  06apr2023  Ben Jann
 
 capt mata: assert(mm_version()>=201)
 if _rc {
@@ -978,7 +978,7 @@ struct CDIST {
     string scalar          method,  // estimation method
                            jmp,     // type of locatioon shift
                            touse,   // varname of sample identifier
-                           xvars,   // varnames of covariates
+                           xvars,   // varnames of covariates (after fvrevar)
                            wvar     // varname of weights
     real scalar            g,       // target size of approximation grid
                            logfit,  // use log scale for estimation
@@ -1021,6 +1021,7 @@ struct CDIST_G {
                            at       // evaluation grid (levels)
     real matrix            X        // covariates
     real matrix            b        // regression coefficients
+    pointer rowvector      R        // rules for perfect predictors (logit)
     real colvector         bl       // coefficients of location regression
     real colvector         obs,     // results: observed
                            fit,     // results: fitted
@@ -1673,20 +1674,21 @@ void _cdist_dr(struct CDIST scalar S, struct CDIST_G scalar G,
     D.dots = S.dots
     _cdist_progress_init(D, G.g, "group "+g+": fitting models")
     G.b = J(cols(G.X) + 1, G.g, .)
+    G.R = J(1, G.g, NULL)
     _cdist_dr_logit(S, G, D, *G.Y.fit)
     assert(!hasmissing(G.b))
     _cdist_progress_done(D)
     // obtain fit
     _cdist_progress_init(D, 0, "enumerating predictions ...")
     if (todo[1]) {
-        G.W.fit = &mm_diff(0 \ _cdist_dr_F(G.X, G.b, G.w))
+        G.W.fit = &mm_diff(0 \ _cdist_dr_F(G.X, G.b, G.w, G.R))
         if (S.logfit) G.Y.fit = &exp(*G.Y.fit)
         G.fit = _cdist_stats(*G.Y.fit, *G.W.fit, S.s)
     }
     // obtain adj
     if (todo[2]) {
-        if (S.pooled) G.W.adj = &mm_diff(0 \ _cdist_dr_F(S.X, G.b, S.w))
-        else          G.W.adj = &mm_diff(0 \ _cdist_dr_F(G1.X, G.b, G1.w))
+        if (S.pooled) G.W.adj = &mm_diff(0 \ _cdist_dr_F(S.X, G.b, S.w, G.R))
+        else          G.W.adj = &mm_diff(0 \ _cdist_dr_F(G1.X, G.b, G1.w, G.R))
         if (S.logfit) G.Y.adj = &exp(*G.Y.adj)
         G.adj = _cdist_stats(*G.Y.adj, *G.W.adj, S.s)
     }
@@ -1695,7 +1697,8 @@ void _cdist_dr(struct CDIST scalar S, struct CDIST_G scalar G,
 
 // subroutine to obtain distribution function from predictions
 
-real colvector _cdist_dr_F(real matrix X, real matrix B, real colvector w)
+real colvector _cdist_dr_F(real matrix X, real matrix B, real colvector w,
+    pointer rowvector R)
 {
     real scalar    i, k
     real colvector F
@@ -1703,9 +1706,49 @@ real colvector _cdist_dr_F(real matrix X, real matrix B, real colvector w)
     k = cols(X)
     i = cols(B)
     F = J(i+1, 1, 1) // set last element to 1
-    for (;i;i--) F[i] = mean(invlogit(_cdist_Xb(X, B[,i], k)), w)
+    for (;i;i--) F[i] = mean(_cdist_dr_F_pr(X, B[,i], k, R[i]), w)
     _sort(F, 1) // rearrange if there are crossings
     return(F)
+}
+
+real colvector _cdist_dr_F_pr(real matrix X, real colvector b, real scalar k,
+    pointer scalar rules)
+{
+    real scalar    i
+    real colvector pr
+    
+    pr = invlogit(_cdist_Xb(X, b, k))
+    if (rules==NULL) return(pr) // no perfect predictor rules
+    i = rows(*rules)
+    for (;i;i--) _cdist_dr_F_pr_rule(pr, X, (*rules)[i,])
+    return(pr)
+}
+
+void _cdist_dr_F_pr_rule(real colvector pr, real matrix X, real rowvector rule)
+{   // see source of _pred_rules.ado
+    real scalar    xid, rel, rhs, val
+    real colvector p
+    
+    xid = rule[1]
+    rel = rule[2]
+    rhs = rule[3]
+    val = (rule[4]!=0)
+    if (rel==1) {
+        p = selectindex(X[,xid]:!=rhs)
+        if (length(p)) pr[p] = J(length(p), 1, val)
+    }
+    else if (rel==2) {
+        p = selectindex(X[,xid]:>rhs)
+        if (length(p)) pr[p] = J(length(p), 1, val)
+        p = selectindex(X[,xid]:<rhs)
+        if (length(p)) pr[p] = J(length(p), 1, 1-val)
+    }
+    else if (rel==3) {
+        p = selectindex(X[,xid]:<rhs)
+        if (length(p)) pr[p] = J(length(p), 1, val)
+        p = selectindex(X[,xid]:>rhs)
+        if (length(p)) pr[p] = J(length(p), 1, 1-val)
+    }
 }
 
 // subroutine to fit the logit models in Stata
@@ -1715,22 +1758,51 @@ void _cdist_dr_logit(struct CDIST scalar S, struct CDIST_G scalar G,
 {
     real scalar      i, Y
     string scalar    Ynm, cmd
-    string rowvector xvars
+    string rowvector Xnm
     
-    xvars = tokens(S.xvars + " _cons")
+    Xnm = tokens(S.xvars)
     Ynm = st_tempname()
     Y   = st_addvar("byte", Ynm)
     cmd = "version 10: logit " + // use old logit version; less overhead
-          Ynm +  " " + S.xvars + " " +
-          (S.wvar!="" ? "[iw=" + S.wvar + "] " : "") +
-          "if " + G.touse + ", asis"
+          Ynm + " " + S.xvars + " " + 
+          (S.wvar!="" ? "[iw=" + S.wvar + "] " : "") + 
+          "if " + G.touse
     for (i=1; i<=G.g; i++) {
         st_store(., Y, G.touse, G.y:<=y[i])
-        stata(cmd, 1)
-        G.b[,i] = _cdist_dr_logit_collect_b(xvars)
+        if (_stata(cmd, 1)) stata(cmd+",asis", 1) // try -asis- if logit fails
+        else G.R[i] = _cdist_dr_logit_rule(Xnm)   // else collect rules
+        G.b[,i] = _cdist_dr_logit_collect_b(Xnm)
         _cdist_progress_dot(D)
     }
     st_dropvar(Ynm)
+}
+
+pointer scalar _cdist_dr_logit_rule(string rowvector X)
+{
+    real scalar      i
+    string rowvector x
+    real rowvector   codes, p
+    real matrix      rules
+    
+    rules = st_matrix("e(rules)")
+    if (rules[1,1]==0) return(NULL)
+    x = st_matrixrowstripe("e(rules)")[,2]'
+    i = rows(rules)
+    rules = J(i, 1, .), rules[|1,1 \ .,3|]
+    codes = (1,2,3)
+    for (;i;i--) {
+        if (!anyof(codes, rules[i,2])) continue
+        p = selectindex(X:==x[i])
+        if (length(p)!=1) {
+            // should never happen
+            errprintf("failure to match %s from e(rules)\n", x[i])
+            exit(498)
+        }
+        rules[i,1] = p
+    }
+    rules = select(rules, rules[,1]:<.)
+    if (rows(rules)) return(&rules)
+    return(NULL)
 }
 
 real colvector _cdist_dr_logit_collect_b(string rowvector X)
@@ -1741,11 +1813,14 @@ real colvector _cdist_dr_logit_collect_b(string rowvector X)
     
     b = st_matrix("e(b)")'
     x = st_matrixcolstripe("e(b)")[,2]'
+    i = cols(x)
+    x = x[|1 \ i-1|] // last element is _cons
     if (x==X) return(b)
     // some vars have been dropped; need to match names
-    j = cols(X)
-    i = cols(x)
+    j = cols(X) + 1
     B = J(j, 1, 0)
+    B[j] = b[i] // _cons
+    j--; i--
     for (;j;j--) {
         if (!i) break
         if (X[j]==x[i]) {

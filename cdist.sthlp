@@ -1,5 +1,5 @@
 {smcl}
-{* 23mar2023}{...}
+{* 06apr2023}{...}
 {hi:help cdist}{...}
 {right:{browse "http://github.com/benjann/cdist/"}}
 {hline}
@@ -393,6 +393,11 @@
     Portnoy and Koenker (1997) and Chernozhukov (2022) to
     speed up the computations. Should these algorithms fail, you can type
     {cmd:method(qr0)} to use standard estimation without preprocessing.
+
+{pmore}
+    When specifying a factor variable with {cmd:method(logit)}, it is
+    advisable, for sake of accuracy of results, to set the base level to a
+    level that exists in both groups.
 
 {phang}
     {opt logfit} performs model fitting based on log-transformed outcome values
