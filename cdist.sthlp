@@ -1,5 +1,5 @@
 {smcl}
-{* 06apr2023}{...}
+{* 06mar2025}{...}
 {hi:help cdist}{...}
 {right:{browse "http://github.com/benjann/cdist/"}}
 {hline}
@@ -444,7 +444,7 @@
     outcome values and the weights. {it:spec} is either an explicit list of variable
     names or {it:stub}{cmd:*} to generate automatic names with a common prefix. Specifying
     {cmd:generate} without argument is equivalent to
-    {cmd:generate(_dstat_*)}.
+    {cmd:generate(_cdist_*)}.
 
 {phang}
     {cmd:replace} allows replacing existing variables.
