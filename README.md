@@ -7,7 +7,11 @@ by [Chernozhukov et al. (2013)](https://doi.org/10.3982/ECTA10582). The uncondit
 or by a linear quantile regression process. Optionally, counterfactual decompositions
 of group differences can be obtained.
 
-To install `cdist` from GitHub, type
+To install `cdist` from the SSC Archive, type
+
+    . ssc install cdist, replace
+
+in Stata. Alternatively, install `cdist` from GitHub as follows:
 
     . net install cdist, replace from(https://raw.githubusercontent.com/benjann/cdist/main/)
 
