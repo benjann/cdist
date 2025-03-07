@@ -63,6 +63,13 @@ regression.
 
 Main changes:
 
+    06apr2024 (version 1.1.0)
+    - averages of depvar are now used within bins (rathre than upper bounds) when
+      computing fitted and adjusted outcome statistics in distribution regression
+      if the evaluation grid does not contain a point for each level of depvar
+      (within the relevant group); this ensures that the approximation error will
+      be zero for the mean
+
     06apr2023 (version 1.0.9)
     - revised procedure for the logit models in distribution regression; perfect
       predictors are now excluded during model estimation (if possible)

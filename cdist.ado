@@ -1,4 +1,4 @@
-*! version 1.0.9  06apr2023  Ben Jann
+*! version 1.1.0  07mar2025  Ben Jann
 
 capt mata: assert(mm_version()>=201)
 if _rc {
@@ -1663,19 +1663,22 @@ void _cdist_dr(struct CDIST scalar S, struct CDIST_G scalar G,
     todo = anyof(S.eqs,"fit"+g), anyof(S.eqs,"adj"+g), anyof(S.eqs,"loc"+g)
     if (!any(todo)) return
     // determine evaluation points
-    if (mm_nunique(G.y)<=S.g) G.at = mm_unique(G.y) // use observed values
+    if (mm_nunique(G.y)<=S.g) {
+        G.at = mm_unique(G.y) // use observed values
+        G.Y.fit = G.Y.adj = &G.at
+    }
     else {
         G.p = (1::S.g)/S.g:-.5/S.g
         G.at = mm_unique(mm_quantile(G.y, G.w, G.p \ 1, 1/*low quantile*/))
+        G.Y.fit = G.Y.adj = &_cdist_dr_at(G.y, G.w, G.at, S.logfit)
     }
     G.g = rows(G.at) - 1 // last element is maximum
-    G.Y.fit = G.Y.adj = &G.at
     // estimate coefficients
     D.dots = S.dots
     _cdist_progress_init(D, G.g, "group "+g+": fitting models")
     G.b = J(cols(G.X) + 1, G.g, .)
     G.R = J(1, G.g, NULL)
-    _cdist_dr_logit(S, G, D, *G.Y.fit)
+    _cdist_dr_logit(S, G, D, G.at)
     assert(!hasmissing(G.b))
     _cdist_progress_done(D)
     // obtain fit
@@ -1693,6 +1696,36 @@ void _cdist_dr(struct CDIST scalar S, struct CDIST_G scalar G,
         G.adj = _cdist_stats(*G.Y.adj, *G.W.adj, S.s)
     }
     _cdist_progress_done(D)
+}
+
+real colvector _cdist_dr_at(real colvector y, real colvector w,
+    real colvector at0, real scalar logfit)
+{   // adjust integration points if grid does not contain all levels of Y
+    // (use the mean within each bin)
+    real scalar    j, a, b, hasw
+    real colvector p, at, yj, wj
+    
+    if (rows(w)!=1) hasw = 1
+    else {;         hasw = 0; wj = w; }
+    p =  mm_order(y,1,1) // use stable sort order
+    at = at0
+    a = rows(y) + 1
+    for (j=rows(at)-1;j;j--) {
+        a = b = a - 1
+        while (y[p[a]]>at[j]) a--
+        a++
+        yj = y[p[|a\b|]]
+        if (hasw) wj = w[p[|a\b|]]
+        if (logfit) at[j+1] = ln(mean(exp(yj), wj))
+        else        at[j+1] = mean(yj, wj)
+
+    }
+    b = a - 1; a = 1
+    yj = y[p[|a\b|]]
+    if (hasw) wj = w[p[|a\b|]]
+    if (logfit) at[j+1] = ln(mean(exp(yj), wj))
+    else        at[j+1] = mean(yj, wj)
+    return(at)
 }
 
 // subroutine to obtain distribution function from predictions
